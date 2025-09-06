@@ -2,8 +2,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProcessingResult } from "@shared/schema";
-import { EmployeeBreakdown } from "./employee-breakdown";
-import { JsonOutput } from "./json-output";
+import { EmployeeBreakdown } from "@/components/employee-breakdown";
+import { JsonOutput } from "@/components/json-output";
 import { BarChart3, CheckCircle, Download, Link } from "lucide-react";
 
 interface ProcessingResultsProps {

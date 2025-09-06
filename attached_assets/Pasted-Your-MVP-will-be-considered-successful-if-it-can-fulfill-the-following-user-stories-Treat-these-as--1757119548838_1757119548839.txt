@@ -1,0 +1,28 @@
+Your MVP will be considered successful if it can fulfill the following user stories. Treat these as your primary development targets and testing checklist.
+
+✅ User Story 1: Core Functionality
+As a payroll administrator, I want to run the tool by uploading a folder containing the relevant files, so that a complete draft pay run is created in Xero without manual data entry.
+
+✅ User Story 2: Data Accuracy
+As a payroll administrator, I want to check any draft payslip, so that I can see all hours (regular, overtime, travel, holiday) are correctly recorded and calculated.
+
+✅ User Story 3: Region Costing & Reconciliation Report
+As a Management Accountant, I want the tool to generate a reconciliation report after a successful run, so that I can easily verify that the consolidated data matches the source spreadsheets and build confidence in the automation (e.g., a simple UI feature or a single CSV output showing a line-by-line summary of all hours processed, grouped by employee, and also grouped by region).
+
+✅ User Story 4: Robust Error Handling (Regions)
+As a payroll administrator, I want the tool to stop and clearly report which region name from the source file isn't listed in Xero, so that I know exactly which region to add in the Xero UI before I re-run the tool.
+
+✅ User Story 5: Interactive Employee Matching
+As a payroll administrator, I want the tool to handle ambiguous employee names by:
+
+1. Suggesting the most likely match from Xero (e.g., matching "P. Kelly" to "Patrick Kelly") and letting me confirm or reject it.
+
+2. If I reject the suggestion, or if no likely match is found, stopping the process and clearly reporting the unresolved name.
+
+So that I can efficiently process clear matches and am given a precise instruction to add or correct the employee's details in Xero before re-running the tool.
+
+Bonus User Stories (Optional)
+Meeting the user stories above is the primary goal. The following stories represent advanced, real-world features that will make the final tool more robust and user-friendly. These are not required for a successful submission, but implementing them is an excellent way to stand out to the hiring team.
+
+⭐ Bonus Story 7: Duplicate Submission Protection
+As a payroll administrator, I want the tool to prevent the creation of duplicate timesheets if it is accidentally run more than once with the same input files, so that the system is protected from accidental user error and data integrity is maintained.

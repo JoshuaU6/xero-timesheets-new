@@ -323,7 +323,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const holidayHours = emp.entries.filter((e: any) => e.hour_type === 'HOLIDAY').reduce((sum: number, e: any) => sum + e.hours, 0);
         const totalEmpHours = regularHours + overtimeHours + travelHours + holidayHours;
         
-        const regions = [...new Set(emp.entries.map((e: any) => e.region_name))];
+        const regions = Array.from(new Set(emp.entries.map((e: any) => e.region_name)));
         const overtimeRate = emp.entries.find((e: any) => e.overtime_rate !== null)?.overtime_rate;
         
         return {
