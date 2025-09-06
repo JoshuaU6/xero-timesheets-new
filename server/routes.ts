@@ -283,9 +283,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     { name: 'overtime_rates', maxCount: 1 }
   ]), async (req, res) => {
     try {
-      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
       
-      if (!files.site_timesheet || !files.travel_timesheet || !files.overtime_rates) {
+      if (!files || !files.site_timesheet || !files.travel_timesheet || !files.overtime_rates) {
         return res.status(400).json({ 
           message: "All three files are required: site_timesheet, travel_timesheet, overtime_rates" 
         });

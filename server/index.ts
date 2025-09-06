@@ -4,7 +4,8 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+// Don't use urlencoded parser globally - it conflicts with multer
+// app.use(express.urlencoded({ extended: false }));
 
 app.use((req, res, next) => {
   const start = Date.now();
