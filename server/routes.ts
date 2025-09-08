@@ -345,13 +345,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('Error parameter:', req.query.error);
     
     try {
-      
+      console.log('🔄 Processing OAuth callback...');
       await xero.apiCallback(req.originalUrl);
+      console.log('🔄 OAuth callback processed, reading tokens...');
+      
       xeroTokens = xero.readTokenSet();
-      console.log('Xero tokens received and stored:', {
+      console.log('🔄 Raw tokens from Xero:', xeroTokens);
+      console.log('🔄 Tokens stored globally:', {
         hasAccessToken: !!xeroTokens?.access_token,
         hasRefreshToken: !!xeroTokens?.refresh_token,
-        expiresIn: xeroTokens?.expires_in
+        expiresIn: xeroTokens?.expires_in,
+        tokenType: typeof xeroTokens
       });
       res.send(`
         <!DOCTYPE html>
