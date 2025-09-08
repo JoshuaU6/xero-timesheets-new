@@ -490,7 +490,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log('No tenant ID available, trying payroll API call...');
           try {
             // Try calling with empty tenant ID - the SDK might populate it automatically
-            await xero.payrollAUApi.getEmployees('');
+            await xero.payrollUKApi.getEmployees('');
           } catch (apiError: any) {
             // Even if this fails, the SDK might have populated tenant info
             const sdk = xero as any;
@@ -510,7 +510,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
         
-        await xero.payrollAUApi.getEmployees(xeroTenantId);
+        await xero.payrollUKApi.getEmployees(xeroTenantId);
         console.log('Xero Payroll API call successful - connected!');
         res.json({ connected: true });
       } catch (validationError) {
