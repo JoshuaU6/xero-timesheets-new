@@ -605,9 +605,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         console.log('Fetching pay items from Xero...');
-        const payItemsResponse = await xero.payrollUKApi.getPayItems ? 
-          await (xero.payrollUKApi as any).getPayItems(xeroTenantId) : 
-          await (xero.payrollUKApi as any).getEarningsRates(xeroTenantId);
+        let payItemsResponse;
+        try {
+          // Try getPayItems first
+          payItemsResponse = await (xero.payrollUKApi as any).getPayItems(xeroTenantId);
+        } catch {
+          // Fallback to getEarningsRates if getPayItems doesn't exist
+          payItemsResponse = await (xero.payrollUKApi as any).getEarningsRates(xeroTenantId);
+        }
         earningsRates = (payItemsResponse as any)?.body?.payItems?.earningsRates || 
                        (payItemsResponse as any)?.body?.earningsRates || [];
         console.log(`Found ${earningsRates.length} earnings rates`);
