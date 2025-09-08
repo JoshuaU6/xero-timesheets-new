@@ -291,11 +291,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Xero OAuth routes
   app.get("/api/xero/connect", async (req, res) => {
     try {
+      console.log('Building Xero consent URL...');
+      console.log('Xero config:', {
+        clientId: process.env.XERO_CLIENT_ID ? 'Present' : 'Missing',
+        clientSecret: process.env.XERO_CLIENT_SECRET ? 'Present' : 'Missing',
+        redirectUri: process.env.XERO_REDIRECT_URI
+      });
+      
       const consentUrl = await xero.buildConsentUrl();
+      console.log('Consent URL generated:', consentUrl);
       res.json({ consentUrl });
     } catch (error) {
       console.error('Error building consent URL:', error);
-      res.status(500).json({ message: 'Failed to initiate Xero connection' });
+      res.status(500).json({ message: 'Failed to initiate Xero connection', error: error.message });
     }
   });
 

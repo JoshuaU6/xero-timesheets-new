@@ -35,22 +35,39 @@ export function ProcessingResults({ result }: ProcessingResultsProps) {
 
   const handleConnectXero = async () => {
     try {
+      console.log('Initiating Xero connection...');
       const response = await apiRequest("GET", "/api/xero/connect");
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+      
       const data = await response.json();
+      console.log('Opening consent URL:', data.consentUrl);
+      
+      if (!data.consentUrl) {
+        throw new Error('No consent URL received from server');
+      }
+      
       window.open(data.consentUrl, '_blank', 'width=800,height=600');
       
       // Poll for connection status
       const pollInterval = setInterval(async () => {
-        await checkXeroStatus();
-        const statusResponse = await apiRequest("GET", "/api/xero/status");
-        const statusData = await statusResponse.json();
-        if (statusData.connected) {
-          setXeroConnected(true);
-          clearInterval(pollInterval);
-          toast({
-            title: "Xero Connected",
-            description: "Successfully connected to Xero. You can now submit timesheets.",
-          });
+        try {
+          await checkXeroStatus();
+          const statusResponse = await apiRequest("GET", "/api/xero/status");
+          const statusData = await statusResponse.json();
+          if (statusData.connected) {
+            setXeroConnected(true);
+            clearInterval(pollInterval);
+            toast({
+              title: "Xero Connected",
+              description: "Successfully connected to Xero. You can now submit timesheets.",
+            });
+          }
+        } catch (pollError) {
+          console.error('Error during polling:', pollError);
         }
       }, 2000);
       
@@ -58,9 +75,10 @@ export function ProcessingResults({ result }: ProcessingResultsProps) {
       setTimeout(() => clearInterval(pollInterval), 60000);
       
     } catch (error) {
+      console.error('Xero connection error:', error);
       toast({
         title: "Connection Failed",
-        description: "Failed to connect to Xero. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to connect to Xero. Please try again.",
         variant: "destructive",
       });
     }
