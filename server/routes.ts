@@ -299,7 +299,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       const consentUrl = await xero.buildConsentUrl();
-      console.log('Consent URL generated:', consentUrl);
+      console.log('Consent URL generated (first 100 chars):', consentUrl.substring(0, 100) + '...');
+      console.log('Expected callback URL should be:', process.env.XERO_REDIRECT_URI);
       res.json({ consentUrl });
     } catch (error) {
       console.error('Error building consent URL:', error);
@@ -307,9 +308,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Test route to verify callback URL is working
+  app.get("/xero-callback-test", (req, res) => {
+    console.log('CALLBACK TEST HIT - This means the URL structure is working');
+    res.send('Callback URL is reachable!');
+  });
+
   app.get("/xero-callback", async (req, res) => {
     try {
-      console.log('Processing Xero callback...');
+      console.log('🎯 CALLBACK HIT! Processing Xero callback...');
+      console.log('Full callback URL:', req.originalUrl);
+      console.log('Query params:', req.query);
+      
       await xero.apiCallback(req.originalUrl);
       xeroTokens = xero.readTokenSet();
       console.log('Xero tokens received and stored:', {
