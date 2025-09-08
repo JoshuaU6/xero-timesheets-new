@@ -289,7 +289,13 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log('📝 Registering API routes...');
   
-  // Add middleware to debug Xero API requests
+  // Debug ALL API requests to find what's happening
+  app.use('/api', (req, res, next) => {
+    console.log(`🔍 ALL API REQUEST: ${req.method} ${req.originalUrl}`);
+    next();
+  });
+  
+  // Add middleware to debug Xero API requests specifically
   app.use('/api/xero', (req, res, next) => {
     console.log(`🚨 XERO ROUTE HIT: ${req.method} ${req.path} - ${req.originalUrl}`);
     next();
