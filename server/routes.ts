@@ -562,12 +562,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   ]), async (req, res) => {
     try {
       const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+      const skipDuplicateCheck = req.body.skipDuplicateCheck === 'true';
       
       console.log('Received files:', files ? Object.keys(files) : 'No files');
       console.log('Request content-type:', req.headers['content-type']);
+      console.log('Skip duplicate check:', skipDuplicateCheck);
       
-      // Check for duplicate submission before processing
-      if (files) {
+      // Check for duplicate submission before processing (unless disabled)
+      if (files && !skipDuplicateCheck) {
         const fileBuffers: Record<string, Buffer> = {};
         const fileNames: Record<string, string> = {};
         
@@ -598,6 +600,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           });
         }
+      } else if (skipDuplicateCheck) {
+        console.log('⚠️ Duplicate protection disabled - processing files anyway');
       }
       
       if (!files || !files.site_timesheet || !files.travel_timesheet || !files.overtime_rates) {
@@ -677,8 +681,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Store result
       const savedResult = await storage.createProcessingResult(validatedResult);
       
-      // Create submission record for duplicate tracking
-      if (files) {
+      // Create submission record for duplicate tracking (unless skipped)
+      if (files && !skipDuplicateCheck) {
         const fileBuffers: Record<string, Buffer> = {};
         const fileNames: Record<string, string> = {};
         

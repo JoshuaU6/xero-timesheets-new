@@ -13,6 +13,7 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
   const [currentResult, setCurrentResult] = useState<ProcessingResult | null>(null);
   const [xeroSubmitted, setXeroSubmitted] = useState(false);
+  const [duplicateProtectionEnabled, setDuplicateProtectionEnabled] = useState(true);
   const { toast } = useToast();
 
   const toggleTheme = () => {
@@ -22,6 +23,8 @@ export default function Home() {
 
   const processFilesMutation = useMutation({
     mutationFn: async (formData: FormData) => {
+      // Add duplicate protection setting to form data
+      formData.append('skipDuplicateCheck', (!duplicateProtectionEnabled).toString());
       const response = await apiRequest("POST", "/api/process-timesheets", formData);
       
       if (!response.ok) {
@@ -89,6 +92,28 @@ export default function Home() {
                 <FlaskConical className="w-4 h-4 mr-1 inline" />
                 MVP Version
               </span>
+              
+              {/* Duplicate Protection Toggle */}
+              <div className="flex items-center space-x-2 px-3 py-1 bg-muted rounded-lg">
+                <span className="text-xs text-muted-foreground">Duplicate Check:</span>
+                <button
+                  onClick={() => setDuplicateProtectionEnabled(!duplicateProtectionEnabled)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    duplicateProtectionEnabled ? 'bg-primary' : 'bg-gray-300'
+                  }`}
+                  data-testid="toggle-duplicate-protection"
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                      duplicateProtectionEnabled ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+                <span className={`text-xs ${duplicateProtectionEnabled ? 'text-green-600' : 'text-amber-600'}`}>
+                  {duplicateProtectionEnabled ? 'ON' : 'OFF'}
+                </span>
+              </div>
+              
               <Button 
                 variant="ghost" 
                 size="icon" 
