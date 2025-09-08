@@ -332,9 +332,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   });
 
+  // Make sure callback route is registered early and clearly
   app.get("/xero-callback", async (req, res) => {
     try {
-      console.log('🎯 CALLBACK HIT! Processing Xero callback...');
+      console.log('🎯🎯🎯 CALLBACK ROUTE HIT! Processing Xero callback...');
       console.log('Full callback URL:', req.originalUrl);
       console.log('Query params:', req.query);
       
