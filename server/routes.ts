@@ -289,6 +289,12 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log('📝 Registering API routes...');
   
+  // Add middleware to debug Xero API requests
+  app.use('/api/xero', (req, res, next) => {
+    console.log(`🚨 XERO ROUTE HIT: ${req.method} ${req.path} - ${req.originalUrl}`);
+    next();
+  });
+  
   // Xero OAuth routes
   app.get("/api/xero/connect", async (req, res) => {
     try {
@@ -534,9 +540,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   console.log('✅ All routes registered successfully');
   console.log('🔄 Available routes:');
-  console.log('  GET /api/test');
   console.log('  GET /api/xero/connect');  
-  console.log('  GET /xero-callback-test');
   console.log('  GET /xero-callback');
   console.log('  GET /api/xero/status');
   console.log('  POST /api/xero/post-timesheets');
