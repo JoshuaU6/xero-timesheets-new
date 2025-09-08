@@ -289,28 +289,18 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log('📝 Registering API routes...');
   
-  // Debug ALL requests first
-  app.use('/api', (req, res, next) => {
-    console.log(`🔍 ALL API REQUEST: ${req.method} ${req.originalUrl}`);
-    next();
-  });
-  
-  app.use('/api/xero', (req, res, next) => {
-    console.log(`🚨 XERO ROUTE HIT: ${req.method} ${req.path} - ${req.originalUrl}`);
-    next();
-  });
-
+  // Register all specific routes FIRST, before any middleware
   // Test route to verify routing works at all
   app.get("/api/test", (req, res) => {
     console.log('🧪 TEST ROUTE HIT - ROUTING IS WORKING!');
     res.set({
-      'X-Test-Route': 'test-handler-executed',
+      'X-Test-Route': 'test-handler-executed', 
       'X-Test-Time': Date.now().toString()
     });
     res.json({ message: 'Test route working', timestamp: Date.now() });
   });
 
-  // Register the specific route AFTER middleware  
+  // Register connect-new route FIRST, before middleware
   app.get("/api/xero/connect-new", async (req, res) => {
     console.log('🎯🎯🎯 CONNECT-NEW ROUTE HIT!!! Starting Xero connection...');
     console.log('🎯 ROUTE HANDLER STARTED! Inside /api/xero/connect-new');
@@ -346,9 +336,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Middleware moved to top of function
-
-  // Make sure callback route is registered early and clearly
+  // Callback route BEFORE middleware  
   app.get("/xero-callback", async (req, res) => {
     console.log('🎯🎯🎯 CALLBACK ROUTE HIT! Processing Xero callback...');
     console.log('Full callback URL:', req.originalUrl);
@@ -573,6 +561,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: error instanceof Error ? error.message : 'Failed to fetch results' 
       });
     }
+  });
+
+  // FINALLY, add middleware at the very end - after all specific routes are registered
+  app.use('/api', (req, res, next) => {
+    console.log(`🔍 ALL API REQUEST: ${req.method} ${req.originalUrl}`);
+    next();
+  });
+  
+  app.use('/api/xero', (req, res, next) => {
+    console.log(`🚨 XERO ROUTE HIT: ${req.method} ${req.path} - ${req.originalUrl}`);
+    next();
   });
 
   console.log('✅ All routes registered successfully');
