@@ -303,15 +303,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ consentUrl });
     } catch (error) {
       console.error('Error building consent URL:', error);
-      res.status(500).json({ message: 'Failed to initiate Xero connection', error: error.message });
+      res.status(500).json({ message: 'Failed to initiate Xero connection', error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
   app.get("/xero-callback", async (req, res) => {
     try {
+      console.log('Processing Xero callback...');
       await xero.apiCallback(req.originalUrl);
       xeroTokens = xero.readTokenSet();
-      console.log('Xero tokens received and stored');
+      console.log('Xero tokens received and stored:', {
+        hasAccessToken: !!xeroTokens?.access_token,
+        hasRefreshToken: !!xeroTokens?.refresh_token,
+        expiresIn: xeroTokens?.expires_in
+      });
       res.send(`
         <!DOCTYPE html>
         <html>
@@ -342,21 +347,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/xero/status", async (req, res) => {
     try {
+      console.log('Checking Xero status...');
+      console.log('Tokens available:', xeroTokens ? 'Yes' : 'No');
+      
       if (!xeroTokens) {
+        console.log('No tokens found');
         return res.json({ connected: false });
       }
       
       // Check if tokens are still valid
+      console.log('Setting token set and testing connection...');
       xero.setTokenSet(xeroTokens);
       try {
         await xero.accountingApi.getOrganisations('');
+        console.log('Xero API call successful - connected!');
         res.json({ connected: true });
-      } catch (error) {
+      } catch (validationError) {
+        console.error('Token validation failed:', validationError);
         // Tokens might be expired
         xeroTokens = null;
         res.json({ connected: false });
       }
     } catch (error) {
+      console.error('Status check error:', error);
       res.json({ connected: false });
     }
   });
