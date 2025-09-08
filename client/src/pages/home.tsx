@@ -12,6 +12,7 @@ import { Moon, Sun, FlaskConical } from "lucide-react";
 export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
   const [currentResult, setCurrentResult] = useState<ProcessingResult | null>(null);
+  const [xeroSubmitted, setXeroSubmitted] = useState(false);
   const { toast } = useToast();
 
   const toggleTheme = () => {
@@ -117,9 +118,9 @@ export default function Home() {
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${currentResult ? 'bg-primary text-primary-foreground' : 'bg-muted-foreground text-background'}`}>3</div>
               <span className={`text-sm font-medium ${currentResult ? 'text-foreground' : 'text-muted-foreground'}`}>Review Results</span>
             </div>
-            <div className="flex items-center space-x-3 p-4 bg-muted rounded-lg border border-border">
-              <div className="w-8 h-8 bg-muted-foreground text-background rounded-full flex items-center justify-center text-sm font-semibold">4</div>
-              <span className="text-sm font-medium text-muted-foreground">Export to Xero</span>
+            <div className={`flex items-center space-x-3 p-4 rounded-lg border border-border ${xeroSubmitted ? 'bg-primary/10' : 'bg-muted'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${xeroSubmitted ? 'bg-primary text-primary-foreground' : 'bg-muted-foreground text-background'}`}>4</div>
+              <span className={`text-sm font-medium ${xeroSubmitted ? 'text-foreground' : 'text-muted-foreground'}`}>Export to Xero</span>
             </div>
           </div>
         </div>
@@ -191,7 +192,7 @@ export default function Home() {
 
         {/* Processing Results */}
         {currentResult && (
-          <ProcessingResults result={currentResult} />
+          <ProcessingResults result={currentResult} onXeroSubmitted={() => setXeroSubmitted(true)} />
         )}
       </main>
 

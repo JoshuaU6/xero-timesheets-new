@@ -11,9 +11,10 @@ import { apiRequest } from "@/lib/queryClient";
 
 interface ProcessingResultsProps {
   result: ProcessingResult;
+  onXeroSubmitted?: () => void;
 }
 
-export function ProcessingResults({ result }: ProcessingResultsProps) {
+export function ProcessingResults({ result, onXeroSubmitted }: ProcessingResultsProps) {
   const [xeroConnected, setXeroConnected] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
@@ -108,6 +109,9 @@ export function ProcessingResults({ result }: ProcessingResultsProps) {
         title: "Success!",
         description: `${data.message} (${data.employees_processed} employees processed)`,
       });
+      
+      // Call the callback to update the step 4 styling
+      onXeroSubmitted?.();
     } catch (error) {
       toast({
         title: "Submission Failed",
