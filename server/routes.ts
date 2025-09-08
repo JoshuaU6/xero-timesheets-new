@@ -300,6 +300,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   });
 
+  // Test route to verify routing works at all
+  app.get("/api/test", (req, res) => {
+    console.log('🧪 TEST ROUTE HIT - ROUTING IS WORKING!');
+    res.json({ message: 'Test route working', timestamp: Date.now() });
+  });
+
   // Register the specific route AFTER middleware
   app.get("/api/xero/connect-new", async (req, res) => {
     console.log('🎯🎯🎯 CONNECT-NEW ROUTE HIT!!! Starting Xero connection...');
