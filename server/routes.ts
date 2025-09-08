@@ -572,7 +572,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log('Received files:', files ? Object.keys(files) : 'No files');
       console.log('Request content-type:', req.headers['content-type']);
-      console.log('Skip duplicate check:', skipDuplicateCheck);
+      console.log('Request body keys:', Object.keys(req.body));
+      console.log('Skip duplicate check value:', req.body.skipDuplicateCheck);
+      console.log('Skip duplicate check boolean:', skipDuplicateCheck);
       
       // Check for duplicate submission before processing (unless disabled)
       if (files && !skipDuplicateCheck) {

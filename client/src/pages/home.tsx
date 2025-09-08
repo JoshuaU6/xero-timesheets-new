@@ -24,7 +24,10 @@ export default function Home() {
   const processFilesMutation = useMutation({
     mutationFn: async (formData: FormData) => {
       // Add duplicate protection setting to form data
-      formData.append('skipDuplicateCheck', (!duplicateProtectionEnabled).toString());
+      const skipValue = (!duplicateProtectionEnabled).toString();
+      console.log('🔘 Frontend: Duplicate protection enabled:', duplicateProtectionEnabled);
+      console.log('🔘 Frontend: Adding skipDuplicateCheck:', skipValue);
+      formData.append('skipDuplicateCheck', skipValue);
       const response = await apiRequest("POST", "/api/process-timesheets", formData);
       
       if (!response.ok) {
