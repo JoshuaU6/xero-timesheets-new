@@ -26,9 +26,43 @@ const xero = new XeroClient({
   scopes: 'offline_access payroll.employees.read payroll.timesheets'.split(' ')
 });
 
-// Simple token storage (in production, use a database)
+// Simple token storage (persist to file to survive server restarts)
 let xeroTokens: any = null;
 let xeroTenantId: string = '';
+
+// Load tokens from file on startup
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { join } from 'path';
+
+const tokenFile = join(process.cwd(), '.xero-tokens.json');
+
+function loadTokens() {
+  try {
+    if (existsSync(tokenFile)) {
+      const data = JSON.parse(readFileSync(tokenFile, 'utf8'));
+      xeroTokens = data.tokens;
+      xeroTenantId = data.tenantId || '';
+      console.log('Loaded tokens from file:', !!xeroTokens);
+    }
+  } catch (error) {
+    console.log('No existing tokens file found');
+  }
+}
+
+function saveTokens() {
+  try {
+    writeFileSync(tokenFile, JSON.stringify({
+      tokens: xeroTokens,
+      tenantId: xeroTenantId
+    }));
+    console.log('Tokens saved to file');
+  } catch (error) {
+    console.error('Failed to save tokens:', error);
+  }
+}
+
+// Load tokens on startup
+loadTokens();
 
 // Fuzzy matching function
 function fuzzyMatch(input: string, candidates: string[]): { match: string | null; score: number } {
@@ -379,6 +413,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch (tenantError) {
           console.error('Failed to get tenant ID:', tenantError);
         }
+        
+        // Save tokens to file for persistence
+        saveTokens();
       }
       
       // Add debug headers to track token storage
