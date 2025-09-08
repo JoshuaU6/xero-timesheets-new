@@ -86,9 +86,9 @@ export default function Home() {
               <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-semibold">1</div>
               <span className="text-sm font-medium text-foreground">Upload Files</span>
             </div>
-            <div className={`flex items-center space-x-3 p-4 rounded-lg border border-border ${processFilesMutation.isPending ? 'bg-primary/10' : 'bg-muted'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${processFilesMutation.isPending ? 'bg-primary text-primary-foreground' : 'bg-muted-foreground text-background'}`}>2</div>
-              <span className={`text-sm font-medium ${processFilesMutation.isPending ? 'text-foreground' : 'text-muted-foreground'}`}>Parse & Validate</span>
+            <div className={`flex items-center space-x-3 p-4 rounded-lg border border-border ${processFilesMutation.isPending || currentResult ? 'bg-primary/10' : 'bg-muted'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${processFilesMutation.isPending || currentResult ? 'bg-primary text-primary-foreground' : 'bg-muted-foreground text-background'}`}>2</div>
+              <span className={`text-sm font-medium ${processFilesMutation.isPending || currentResult ? 'text-foreground' : 'text-muted-foreground'}`}>Parse & Validate</span>
             </div>
             <div className={`flex items-center space-x-3 p-4 rounded-lg border border-border ${currentResult ? 'bg-primary/10' : 'bg-muted'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${currentResult ? 'bg-primary text-primary-foreground' : 'bg-muted-foreground text-background'}`}>3</div>
