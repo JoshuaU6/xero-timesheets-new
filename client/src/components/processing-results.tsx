@@ -35,8 +35,10 @@ export function ProcessingResults({ result }: ProcessingResultsProps) {
 
   const handleConnectXero = async () => {
     try {
-      console.log('Initiating Xero connection...');
+      console.log('🔘 Frontend: Starting Xero connection process...');
+      console.log('🔘 Frontend: Making API call to /api/xero/connect');
       const response = await apiRequest("GET", "/api/xero/connect");
+      console.log('🔘 Frontend: Response received:', response.status);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
@@ -44,13 +46,21 @@ export function ProcessingResults({ result }: ProcessingResultsProps) {
       }
       
       const data = await response.json();
-      console.log('Opening consent URL:', data.consentUrl);
+      console.log('🔘 Frontend: Got consent URL, opening popup...');
+      console.log('🔘 Frontend: Consent URL received:', data.consentUrl ? 'Yes' : 'No');
       
       if (!data.consentUrl) {
         throw new Error('No consent URL received from server');
       }
       
-      window.open(data.consentUrl, '_blank', 'width=800,height=600');
+      console.log('🔘 Frontend: Opening popup window...');
+      const popup = window.open(data.consentUrl, '_blank', 'width=800,height=600');
+      
+      if (!popup) {
+        throw new Error('Popup was blocked by browser. Please allow popups and try again.');
+      }
+      
+      console.log('🔘 Frontend: Popup opened successfully, starting polling...');
       
       // Poll for connection status
       const pollInterval = setInterval(async () => {
