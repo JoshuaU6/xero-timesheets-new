@@ -81,7 +81,7 @@ export const SubmissionSchema = z.object({
   id: z.number(),
   file_hash: z.string(),
   pay_period_end_date: z.string(),
-  file_names: z.record(z.string()),
+  file_names: z.any(), // JSONB can contain any JSON data
   processing_result_id: z.string().nullable(),
   xero_submission_status: z.string(),
   created_at: z.string(),

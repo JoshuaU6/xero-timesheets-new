@@ -563,6 +563,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Received files:', files ? Object.keys(files) : 'No files');
       console.log('Request content-type:', req.headers['content-type']);
       
+      // Check for duplicate submission before processing
+      if (files) {
+        const fileBuffers: Record<string, Buffer> = {};
+        const fileNames: Record<string, string> = {};
+        
+        Object.entries(files).forEach(([fieldName, fileArray]) => {
+          if (fileArray && fileArray[0]) {
+            fileBuffers[fieldName] = fileArray[0].buffer;
+            fileNames[fieldName] = fileArray[0].originalname;
+          }
+        });
+        
+        // Generate hash for duplicate detection
+        const fileHash = storage.generateFileHash(fileBuffers);
+        
+        // Check if this exact submission already exists
+        const existingSubmission = await storage.getSubmissionByHash(fileHash);
+        if (existingSubmission) {
+          console.log('🚫 Duplicate submission detected:', fileHash);
+          return res.status(409).json({
+            success: false,
+            isDuplicate: true,
+            message: 'These files have already been processed.',
+            existingSubmission: {
+              id: existingSubmission.id,
+              pay_period_end_date: existingSubmission.pay_period_end_date,
+              file_names: existingSubmission.file_names,
+              created_at: existingSubmission.created_at,
+              xero_submission_status: existingSubmission.xero_submission_status
+            }
+          });
+        }
+      }
+      
       if (!files || !files.site_timesheet || !files.travel_timesheet || !files.overtime_rates) {
         return res.status(400).json({ 
           message: "All three files are required: site_timesheet, travel_timesheet, overtime_rates" 
@@ -639,6 +673,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Store result
       const savedResult = await storage.createProcessingResult(validatedResult);
+      
+      // Create submission record for duplicate tracking
+      if (files) {
+        const fileBuffers: Record<string, Buffer> = {};
+        const fileNames: Record<string, string> = {};
+        
+        Object.entries(files).forEach(([fieldName, fileArray]) => {
+          if (fileArray && fileArray[0]) {
+            fileBuffers[fieldName] = fileArray[0].buffer;
+            fileNames[fieldName] = fileArray[0].originalname;
+          }
+        });
+        
+        const fileHash = storage.generateFileHash(fileBuffers);
+        
+        await storage.createSubmission({
+          file_hash: fileHash,
+          pay_period_end_date: consolidatedData.pay_period_end_date,
+          file_names: fileNames,
+          processing_result_id: savedResult.id,
+          xero_submission_status: "pending"
+        });
+        
+        console.log('📝 Submission recorded with hash:', fileHash);
+      }
       
       res.json(savedResult);
       
