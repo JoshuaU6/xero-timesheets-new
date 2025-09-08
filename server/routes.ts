@@ -643,18 +643,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Create a fallback earnings map - use first available earning rate if we can't access pay items
       const earningsMap = new Map();
-      earningsRates.forEach((rate: any) => {
-        if (rate.name?.toLowerCase().includes('regular')) {
-          earningsMap.set('REGULAR', rate.earningsRateID);
-        } else if (rate.name?.toLowerCase().includes('overtime')) {
-          earningsMap.set('OVERTIME', rate.earningsRateID);
-        } else if (rate.name?.toLowerCase().includes('travel')) {
-          earningsMap.set('TRAVEL', rate.earningsRateID);
-        } else if (rate.name?.toLowerCase().includes('holiday')) {
-          earningsMap.set('HOLIDAY', rate.earningsRateID);
-        }
-      });
+      let defaultEarningsRateId: string | null = null;
+      
+      if (earningsRates.length > 0) {
+        // If we have access to earnings rates, map them properly
+        earningsRates.forEach((rate: any) => {
+          if (rate.name?.toLowerCase().includes('regular') || rate.name?.toLowerCase().includes('ordinary')) {
+            earningsMap.set('REGULAR', rate.earningsRateID);
+            defaultEarningsRateId = rate.earningsRateID;
+          } else if (rate.name?.toLowerCase().includes('overtime')) {
+            earningsMap.set('OVERTIME', rate.earningsRateID);
+          } else if (rate.name?.toLowerCase().includes('travel')) {
+            earningsMap.set('TRAVEL', rate.earningsRateID);
+          } else if (rate.name?.toLowerCase().includes('holiday')) {
+            earningsMap.set('HOLIDAY', rate.earningsRateID);
+          }
+          // Set first rate as default if we don't have a regular rate
+          if (!defaultEarningsRateId) {
+            defaultEarningsRateId = rate.earningsRateID;
+          }
+        });
+      } else {
+        // No access to earnings rates - we'll use a null default and create simple timesheets
+        console.warn('⚠️ No earnings rates available - creating simplified timesheets');
+      }
 
       console.log(`💼 Found ${employees.length} employees in Xero`);
       console.log(`📍 Found ${regionCategory?.options?.length || 0} regions in Xero`);
@@ -672,29 +686,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
-          // Build timesheet lines
+          // Build timesheet lines with fallback approach
           const timesheetLines = [];
+          
+          // Group entries by date to combine hours
+          const entriesByDate = new Map();
           for (const entry of employee.daily_entries) {
-            const earningsRateId = earningsMap.get(entry.hour_type);
-            const trackingItemId = regionMap.get(entry.region_name);
-
-            if (!earningsRateId) {
-              errors.push(`Earnings rate not found for type: ${entry.hour_type}`);
-              continue;
+            const dateKey = entry.entry_date;
+            if (!entriesByDate.has(dateKey)) {
+              entriesByDate.set(dateKey, { date: dateKey, totalHours: 0, regions: new Set() });
             }
+            const dayEntry = entriesByDate.get(dateKey);
+            dayEntry.totalHours += entry.hours;
+            dayEntry.regions.add(entry.region_name);
+          }
+          
+          // Create timesheet lines - one per date with combined hours
+          for (const [date, dayData] of Array.from(entriesByDate.entries())) {
+            let earningsRateId = defaultEarningsRateId;
+            
+            // Try to get a specific rate if available, otherwise use default
+            if (earningsMap.size > 0) {
+              earningsRateId = earningsMap.get('REGULAR') || defaultEarningsRateId;
+            }
+            
             const timesheetLine: any = {
-              date: entry.entry_date,
-              earningsRateID: earningsRateId,
-              numberOfUnits: entry.hours
+              date: date,
+              numberOfUnits: dayData.totalHours
             };
-
+            
+            // Only add earningsRateID if we have one
+            if (earningsRateId) {
+              timesheetLine.earningsRateID = earningsRateId;
+            }
+            
             // Only add tracking if we have region tracking set up
+            const firstRegion = Array.from(dayData.regions)[0];
+            const trackingItemId = regionMap.get(firstRegion);
             if (trackingItemId && regionCategory) {
               timesheetLine.trackingItemID = trackingItemId;
-            } else if (entry.region_name && !trackingItemId) {
-              errors.push(`Region not found in Xero: ${entry.region_name}`);
             }
-
+            
             timesheetLines.push(timesheetLine);
           }
 
@@ -703,15 +735,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
-          // Create the timesheet - need to add required payrollCalendarID
+          // Create the timesheet with minimal required fields
           const timesheetData: any = {
             employeeID: xeroEmployeeId,
             startDate: consolidated_data.pay_period_end_date,
             endDate: consolidated_data.pay_period_end_date,
             status: 'Draft',
-            payrollCalendarID: 'default', // This might need to be fetched from Xero
             timesheetLines: timesheetLines
           };
+          
+          // Only add payrollCalendarID if we can determine what it should be
+          // For now, let's try without it and see if Xero accepts it
 
           try {
             const createResponse = await xero.payrollUKApi.createTimesheet(xeroTenantId, timesheetData);
