@@ -301,10 +301,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   });
   
-  // Xero OAuth routes
+  // Xero OAuth routes with cache busting
   app.get("/api/xero/connect", async (req, res) => {
+    // Add no-cache headers to prevent caching issues
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+    
     try {
-      console.log('Building Xero consent URL...');
+      console.log('🎯 BACKEND HIT! Building Xero consent URL...');
       console.log('Xero config:', {
         clientId: process.env.XERO_CLIENT_ID ? 'Present' : 'Missing',
         clientSecret: process.env.XERO_CLIENT_SECRET ? 'Present' : 'Missing',
