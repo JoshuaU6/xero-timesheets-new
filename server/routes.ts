@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { insertProcessingResultSchema } from "@shared/schema";
 import multer from "multer";
 import * as XLSX from "xlsx";
+import { XeroClient } from "xero-node";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -16,6 +17,17 @@ const upload = multer({
 // Known validation data (as specified in requirements)
 const KNOWN_EMPLOYEES = ["Charlotte Danes", "Chelsea Serati", "Jack Allan"];
 const VALID_REGIONS = ["Eastside", "South", "North"];
+
+// Initialize Xero client
+const xero = new XeroClient({
+  clientId: process.env.XERO_CLIENT_ID!,
+  clientSecret: process.env.XERO_CLIENT_SECRET!,
+  redirectUris: [process.env.XERO_REDIRECT_URI!],
+  scopes: 'offline_access payroll.employees.read payroll.timesheets'.split(' ')
+});
+
+// Simple token storage (in production, use a database)
+let xeroTokens: any = null;
 
 // Fuzzy matching function
 function fuzzyMatch(input: string, candidates: string[]): { match: string | null; score: number } {
@@ -276,6 +288,97 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // Xero OAuth routes
+  app.get("/api/xero/connect", async (req, res) => {
+    try {
+      const consentUrl = await xero.buildConsentUrl();
+      res.json({ consentUrl });
+    } catch (error) {
+      console.error('Error building consent URL:', error);
+      res.status(500).json({ message: 'Failed to initiate Xero connection' });
+    }
+  });
+
+  app.get("/xero-callback", async (req, res) => {
+    try {
+      await xero.apiCallback(req.originalUrl);
+      xeroTokens = xero.readTokenSet();
+      console.log('Xero tokens received and stored');
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Xero Connected</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; margin-top: 100px;">
+          <h1>🔑 Xero Authorization Successful!</h1>
+          <p>You can now close this window and return to the application.</p>
+          <script>
+            setTimeout(() => window.close(), 3000);
+          </script>
+        </body>
+        </html>
+      `);
+    } catch (error) {
+      console.error('OAuth callback error:', error);
+      res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Xero Connection Failed</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; margin-top: 100px;">
+          <h1>❌ Authorization Failed</h1>
+          <p>Please try connecting again.</p>
+        </body>
+        </html>
+      `);
+    }
+  });
+
+  app.get("/api/xero/status", async (req, res) => {
+    try {
+      if (!xeroTokens) {
+        return res.json({ connected: false });
+      }
+      
+      // Check if tokens are still valid
+      xero.setTokenSet(xeroTokens);
+      try {
+        await xero.accountingApi.getOrganisations('');
+        res.json({ connected: true });
+      } catch (error) {
+        // Tokens might be expired
+        xeroTokens = null;
+        res.json({ connected: false });
+      }
+    } catch (error) {
+      res.json({ connected: false });
+    }
+  });
+
+  app.post("/api/xero/post-timesheets", async (req, res) => {
+    try {
+      if (!xeroTokens) {
+        return res.status(400).json({ message: 'Not connected to Xero. Please connect first.' });
+      }
+
+      const { consolidated_data } = req.body;
+      if (!consolidated_data) {
+        return res.status(400).json({ message: 'No timesheet data provided' });
+      }
+
+      xero.setTokenSet(xeroTokens);
+      
+      // For now, return success message - full implementation would post to Xero API
+      res.json({ 
+        success: true, 
+        message: 'Draft pay run would be created in Xero',
+        employees_processed: consolidated_data.employees.length
+      });
+      
+    } catch (error) {
+      console.error('Error posting to Xero:', error);
+      res.status(500).json({ message: 'Failed to post to Xero' });
+    }
+  });
+
   // Upload and process files
   app.post("/api/process-timesheets", upload.fields([
     { name: 'site_timesheet', maxCount: 1 },

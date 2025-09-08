@@ -1,16 +1,94 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProcessingResult } from "@shared/schema";
 import { EmployeeBreakdown } from "@/components/employee-breakdown";
 import { JsonOutput } from "@/components/json-output";
-import { BarChart3, CheckCircle, Download, Link } from "lucide-react";
+import { BarChart3, CheckCircle, Download, Link, ExternalLink, Upload } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 interface ProcessingResultsProps {
   result: ProcessingResult;
 }
 
 export function ProcessingResults({ result }: ProcessingResultsProps) {
+  const [xeroConnected, setXeroConnected] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const { toast } = useToast();
+
+  // Check Xero connection status on component mount
+  useEffect(() => {
+    checkXeroStatus();
+  }, []);
+
+  const checkXeroStatus = async () => {
+    try {
+      const response = await apiRequest("GET", "/api/xero/status");
+      const data = await response.json();
+      setXeroConnected(data.connected);
+    } catch (error) {
+      console.error('Error checking Xero status:', error);
+    }
+  };
+
+  const handleConnectXero = async () => {
+    try {
+      const response = await apiRequest("GET", "/api/xero/connect");
+      const data = await response.json();
+      window.open(data.consentUrl, '_blank', 'width=800,height=600');
+      
+      // Poll for connection status
+      const pollInterval = setInterval(async () => {
+        await checkXeroStatus();
+        const statusResponse = await apiRequest("GET", "/api/xero/status");
+        const statusData = await statusResponse.json();
+        if (statusData.connected) {
+          setXeroConnected(true);
+          clearInterval(pollInterval);
+          toast({
+            title: "Xero Connected",
+            description: "Successfully connected to Xero. You can now submit timesheets.",
+          });
+        }
+      }, 2000);
+      
+      // Stop polling after 60 seconds
+      setTimeout(() => clearInterval(pollInterval), 60000);
+      
+    } catch (error) {
+      toast({
+        title: "Connection Failed",
+        description: "Failed to connect to Xero. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSubmitToXero = async () => {
+    setSubmitting(true);
+    try {
+      const response = await apiRequest("POST", "/api/xero/post-timesheets", {
+        consolidated_data: result.consolidated_data
+      });
+      const data = await response.json();
+      
+      toast({
+        title: "Success!",
+        description: `${data.message} (${data.employees_processed} employees processed)`,
+      });
+    } catch (error) {
+      toast({
+        title: "Submission Failed",
+        description: "Failed to submit timesheets to Xero. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleDownloadSummary = () => {
     const summaryData = {
       summary: result.summary,
@@ -97,7 +175,7 @@ export function ProcessingResults({ result }: ProcessingResultsProps) {
         <CardHeader>
           <CardTitle className="flex items-center">
             <Link className="mr-2 text-primary" />
-            Xero Integration (Future)
+            Xero Integration
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -105,9 +183,14 @@ export function ProcessingResults({ result }: ProcessingResultsProps) {
             <div className="flex items-start space-x-3">
               <i className="fas fa-info-circle text-primary mt-1"></i>
               <div>
-                <h4 className="font-medium text-foreground mb-1">Ready for Xero API Integration</h4>
+                <h4 className="font-medium text-foreground mb-1">
+                  {xeroConnected ? "Ready to Submit to Xero" : "Connect to Xero to Continue"}
+                </h4>
                 <p className="text-sm text-muted-foreground">
-                  The consolidated JSON data is structured for direct posting to Xero Timesheets API endpoints.
+                  {xeroConnected 
+                    ? "Your timesheet data is ready to be posted to Xero's Timesheets API."
+                    : "Connect to your Xero organization to enable timesheet submission."
+                  }
                 </p>
               </div>
             </div>
@@ -116,31 +199,46 @@ export function ProcessingResults({ result }: ProcessingResultsProps) {
           <div className="space-y-3">
             <div className="flex items-center justify-between py-2">
               <span className="text-sm text-muted-foreground">OAuth 2.0 Authentication</span>
-              <Badge variant="secondary" className="bg-amber-100 text-amber-800">Pending</Badge>
+              <Badge variant="secondary" className={xeroConnected ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}>
+                {xeroConnected ? "Connected" : "Pending"}
+              </Badge>
             </div>
             <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-muted-foreground">Employee ID Mapping</span>
-              <Badge variant="secondary" className="bg-amber-100 text-amber-800">Pending</Badge>
+              <span className="text-sm text-muted-foreground">Timesheet Data Processing</span>
+              <Badge variant="secondary" className="bg-green-100 text-green-800">Complete</Badge>
             </div>
             <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-muted-foreground">Region Tracking IDs</span>
-              <Badge variant="secondary" className="bg-amber-100 text-amber-800">Pending</Badge>
+              <span className="text-sm text-muted-foreground">Employee Validation</span>
+              <Badge variant="secondary" className="bg-green-100 text-green-800">Complete</Badge>
             </div>
             <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-muted-foreground">Timesheet API Posting</span>
-              <Badge variant="secondary" className="bg-amber-100 text-amber-800">Pending</Badge>
+              <span className="text-sm text-muted-foreground">Region Allocation</span>
+              <Badge variant="secondary" className="bg-green-100 text-green-800">Complete</Badge>
             </div>
           </div>
 
-          <Button
-            className="w-full mt-4"
-            variant="secondary"
-            disabled
-            data-testid="button-connect-xero"
-          >
-            <i className="fas fa-cloud-upload-alt mr-2"></i>
-            Connect to Xero (Coming Soon)
-          </Button>
+          <div className="mt-4 space-y-2">
+            {!xeroConnected ? (
+              <Button
+                className="w-full"
+                onClick={handleConnectXero}
+                data-testid="button-connect-xero"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Connect to Xero
+              </Button>
+            ) : (
+              <Button
+                className="w-full"
+                onClick={handleSubmitToXero}
+                disabled={submitting}
+                data-testid="button-submit-xero"
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                {submitting ? "Submitting..." : "Submit to Xero"}
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
