@@ -1,0 +1,146 @@
+{
+  "pay_period_end_date": "2025-06-08",
+  "employees": [
+    {
+      "employee_name": "Charlotte Danes",
+      "daily_entries": [
+        {
+          "entry_date": "2025-06-02",
+          "region_name": "South",
+          "hours": 8,
+          "hour_type": "REGULAR",
+          "overtime_rate": 30
+        },
+        {
+          "entry_date": "2025-06-02",
+          "region_name": "South",
+          "hours": 1,
+          "hour_type": "OVERTIME",
+          "overtime_rate": 30
+        },
+        {
+          "entry_date": "2025-06-05",
+          "region_name": "South",
+          "hours": 8,
+          "hour_type": "REGULAR",
+          "overtime_rate": 30
+        },
+        {
+          "entry_date": "2025-06-05",
+          "region_name": "South",
+          "hours": 1,
+          "hour_type": "OVERTIME",
+          "overtime_rate": 30
+        },
+        {
+          "entry_date": "2025-06-06",
+          "region_name": "South",
+          "hours": 8,
+          "hour_type": "REGULAR",
+          "overtime_rate": 30
+        },
+        {
+          "entry_date": "2025-06-06",
+          "region_name": "South",
+          "hours": 0.5,
+          "hour_type": "OVERTIME",
+          "overtime_rate": 30
+        },
+        {
+          "entry_date": "2025-06-03",
+          "region_name": "North",
+          "hours": 8,
+          "hour_type": "HOLIDAY",
+          "overtime_rate": 30
+        },
+        {
+          "entry_date": "2025-06-04",
+          "region_name": "North",
+          "hours": 8,
+          "hour_type": "REGULAR",
+          "overtime_rate": 30
+        },
+        {
+          "entry_date": "2025-06-04",
+          "region_name": "North",
+          "hours": 1,
+          "hour_type": "OVERTIME",
+          "overtime_rate": 30
+        }
+      ]
+    },
+    {
+      "employee_name": "Chelsea Serati",
+      "daily_entries": [
+        {
+          "entry_date": "2025-06-03",
+          "region_name": "North",
+          "hours": 8,
+          "hour_type": "REGULAR",
+          "overtime_rate": null
+        },
+        {
+          "entry_date": "2025-06-03",
+          "region_name": "North",
+          "hours": 1,
+          "hour_type": "OVERTIME",
+          "overtime_rate": null
+        },
+        {
+          "entry_date": "2025-06-04",
+          "region_name": "North",
+          "hours": 8,
+          "hour_type": "REGULAR",
+          "overtime_rate": null
+        },
+        {
+          "entry_date": "2025-06-04",
+          "region_name": "North",
+          "hours": 1,
+          "hour_type": "OVERTIME",
+          "overtime_rate": null
+        },
+        {
+          "entry_date": "2025-06-05",
+          "region_name": "North",
+          "hours": 8,
+          "hour_type": "REGULAR",
+          "overtime_rate": null
+        },
+        {
+          "entry_date": "2025-06-05",
+          "region_name": "North",
+          "hours": 1,
+          "hour_type": "OVERTIME",
+          "overtime_rate": null
+        },
+        {
+          "entry_date": "2025-06-06",
+          "region_name": "North",
+          "hours": 8,
+          "hour_type": "REGULAR",
+          "overtime_rate": null
+        }
+      ]
+    },
+    {
+      "employee_name": "Jack Allan",
+      "daily_entries": [
+        {
+          "entry_date": "2025-06-02",
+          "region_name": "Eastside",
+          "hours": 8,
+          "hour_type": "REGULAR",
+          "overtime_rate": 28
+        },
+        {
+          "entry_date": "2025-06-02",
+          "region_name": "Eastside",
+          "hours": 1,
+          "hour_type": "OVERTIME",
+          "overtime_rate": 28
+        }
+      ]
+    }
+  ]
+}
