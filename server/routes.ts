@@ -384,12 +384,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ connected: false });
       }
       
-      // Check if tokens are still valid
+      // Check if tokens are still valid - use payroll API since we have payroll scopes
       console.log('Setting token set and testing connection...');
       xero.setTokenSet(xeroTokens);
       try {
-        await xero.accountingApi.getOrganisations('');
-        console.log('Xero API call successful - connected!');
+        // Since we have payroll scopes, test with payroll API instead of accounting
+        await xero.payrollAUApi.getEmployees('');
+        console.log('Xero Payroll API call successful - connected!');
         res.json({ connected: true });
       } catch (validationError) {
         console.error('Token validation failed:', validationError);
