@@ -23,7 +23,7 @@ const xero = new XeroClient({
   clientId: process.env.XERO_CLIENT_ID!,
   clientSecret: process.env.XERO_CLIENT_SECRET!,
   redirectUris: [process.env.XERO_REDIRECT_URI!],
-  scopes: 'offline_access accounting.settings accounting.settings.read payroll.employees.read payroll.timesheets payroll.payitems payroll.payitems.read'.split(' ')
+  scopes: 'offline_access payroll.employees.read payroll.timesheets'.split(' ')
 });
 
 // Simple token storage (persist to file to survive server restarts)
