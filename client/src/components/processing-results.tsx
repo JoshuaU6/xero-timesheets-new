@@ -192,6 +192,20 @@ export function ProcessingResults({ result }: ProcessingResultsProps) {
             </div>
           </div>
 
+          {/* Parsing Results Summary */}
+          <div className="space-y-4">
+            <h3 className="text-xl font-semibold text-foreground">Parsing Results Summary</h3>
+            
+            <div className="space-y-2 text-sm">
+              <div>
+                <span className="font-medium">Files Processed:</span> {result.summary.files_processed}
+              </div>
+              <div>
+                <span className="font-medium">Pay Period End Date:</span> {result.consolidated_data.pay_period_end_date}
+              </div>
+            </div>
+          </div>
+
           {/* Employee Breakdown */}
           <EmployeeBreakdown summaries={result.summary.employee_summaries} />
         </CardContent>
