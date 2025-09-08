@@ -303,6 +303,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Xero OAuth routes with new endpoint name to bypass any caching/conflicts
   app.get("/api/xero/connect-new", async (req, res) => {
+    console.log('🎯 ROUTE HANDLER STARTED! Inside /api/xero/connect-new');
+    
     // Add no-cache headers to prevent caching issues
     res.set({
       'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -311,7 +313,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
     
     try {
-      console.log('🎯 BACKEND HIT! Building Xero consent URL...');
+      console.log('🎯 Building Xero consent URL...');
       console.log('Xero config:', {
         clientId: process.env.XERO_CLIENT_ID ? 'Present' : 'Missing',
         clientSecret: process.env.XERO_CLIENT_SECRET ? 'Present' : 'Missing',
@@ -319,11 +321,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       const consentUrl = await xero.buildConsentUrl();
-      console.log('Consent URL generated (first 100 chars):', consentUrl.substring(0, 100) + '...');
-      console.log('Expected callback URL should be:', process.env.XERO_REDIRECT_URI);
+      console.log('🎯 Consent URL generated successfully:', consentUrl.substring(0, 100) + '...');
+      console.log('🎯 Sending JSON response...');
+      
       res.json({ consentUrl });
+      console.log('🎯 JSON response sent!');
     } catch (error) {
-      console.error('Error building consent URL:', error);
+      console.error('🚨 Error in route handler:', error);
       res.status(500).json({ message: 'Failed to initiate Xero connection', error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
