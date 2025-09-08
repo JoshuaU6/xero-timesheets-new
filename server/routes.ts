@@ -302,6 +302,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register the specific route AFTER middleware
   app.get("/api/xero/connect-new", async (req, res) => {
+    console.log('🎯🎯🎯 CONNECT-NEW ROUTE HIT!!! Starting Xero connection...');
     console.log('🎯 ROUTE HANDLER STARTED! Inside /api/xero/connect-new');
     
     // Add no-cache headers to prevent caching issues
@@ -337,12 +338,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Make sure callback route is registered early and clearly
   app.get("/xero-callback", async (req, res) => {
+    console.log('🎯🎯🎯 CALLBACK ROUTE HIT! Processing Xero callback...');
+    console.log('Full callback URL:', req.originalUrl);
+    console.log('Query params:', req.query);
+    console.log('Authorization code present:', !!req.query.code);
+    console.log('Error parameter:', req.query.error);
+    
     try {
-      console.log('🎯🎯🎯 CALLBACK ROUTE HIT! Processing Xero callback...');
-      console.log('Full callback URL:', req.originalUrl);
-      console.log('Query params:', req.query);
-      console.log('Authorization code present:', !!req.query.code);
-      console.log('Error parameter:', req.query.error);
       
       await xero.apiCallback(req.originalUrl);
       xeroTokens = xero.readTokenSet();
