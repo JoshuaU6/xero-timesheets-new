@@ -28,6 +28,7 @@ const xero = new XeroClient({
 
 // Simple token storage (in production, use a database)
 let xeroTokens: any = null;
+let xeroTenantId: string = '';
 
 // Fuzzy matching function
 function fuzzyMatch(input: string, candidates: string[]): { match: string | null; score: number } {
@@ -365,10 +366,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await xero.apiCallback(req.originalUrl);
       xeroTokens = xero.readTokenSet();
       
+      // Get tenant ID (organization ID) after receiving tokens
+      if (xeroTokens) {
+        try {
+          const tokenSet = xeroTokens as any;
+          xero.setTokenSet(tokenSet);
+          const tenants = await xero.updateTenants();
+          if (tenants && tenants.length > 0) {
+            xeroTenantId = tenants[0].tenantId;
+            console.log('Xero tenant ID stored:', xeroTenantId);
+          }
+        } catch (tenantError) {
+          console.error('Failed to get tenant ID:', tenantError);
+        }
+      }
+      
       // Add debug headers to track token storage
       res.set({
         'X-Tokens-Stored': String(!!xeroTokens),
-        'X-Has-Access-Token': String(!!xeroTokens?.access_token)
+        'X-Has-Access-Token': String(!!xeroTokens?.access_token),
+        'X-Tenant-ID': xeroTenantId || 'none'
       });
       res.send(`
         <!DOCTYPE html>
@@ -413,7 +430,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       xero.setTokenSet(xeroTokens);
       try {
         // Since we have payroll scopes, test with payroll API instead of accounting
-        await xero.payrollAUApi.getEmployees('');
+        // Use the stored tenant ID for the API call
+        if (!xeroTenantId) {
+          // Try to get tenant ID if we don't have it
+          const tenants = await xero.updateTenants();
+          if (tenants && tenants.length > 0) {
+            xeroTenantId = tenants[0].tenantId;
+            console.log('Got tenant ID:', xeroTenantId);
+          }
+        }
+        
+        await xero.payrollAUApi.getEmployees(xeroTenantId);
         console.log('Xero Payroll API call successful - connected!');
         res.json({ connected: true });
       } catch (validationError) {
