@@ -174,32 +174,30 @@ function processSiteTimesheet(workbook: XLSX.WorkBook) {
           }
         } else {
           hours = parseFloat(String(cellValue)) || 0;
-          if (hours > 8) {
-            // Split into regular and overtime
-            employeeData.get(employeeName).entries.push({
-              entry_date: entryDate.toISOString().split('T')[0],
-              region_name: regionName,
-              hours: 8,
-              hour_type: "REGULAR",
-              overtime_rate: null,
-            });
-            
-            employeeData.get(employeeName).entries.push({
-              entry_date: entryDate.toISOString().split('T')[0],
-              region_name: regionName,
-              hours: hours - 8,
-              hour_type: "OVERTIME",
-              overtime_rate: null,
-            });
-            continue;
-          }
+          if (hours === 0) continue;
+          hourType = "REGULAR";
         }
         
-        if (hours > 0) {
-          employeeData.get(employeeName).entries.push({
-            entry_date: entryDate.toISOString().split('T')[0],
+        const dateString = entryDate.toISOString().split('T')[0];
+        
+        // Check if there's already an entry for this date/region/type
+        const employee = employeeData.get(employeeName);
+        const existingEntry = employee.entries.find(
+          (entry: any) => 
+            entry.entry_date === dateString && 
+            entry.region_name === regionName && 
+            entry.hour_type === hourType
+        );
+        
+        if (existingEntry) {
+          // Add to existing entry
+          existingEntry.hours += hours;
+        } else if (hours > 0) {
+          // Create new entry
+          employee.entries.push({
+            entry_date: dateString,
             region_name: regionName,
-            hours,
+            hours: hours,
             hour_type: hourType,
             overtime_rate: null,
           });
@@ -268,10 +266,9 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
   
-  // Find header row and column indices
+  // Find header row and column indices - look for employee name and rate columns
   let nameColIndex = -1;
-  let differentRateColIndex = -1;
-  let hourlyRateColIndex = -1;
+  let rateColIndex = -1;
   
   for (let i = 0; i < data.length; i++) {
     const row = data[i] as any[];
@@ -279,20 +276,18 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
     
     for (let j = 0; j < row.length; j++) {
       const cell = String(row[j]).toLowerCase();
-      if (cell.includes('name')) nameColIndex = j;
-      if (cell.includes('different rate')) differentRateColIndex = j;
-      if (cell.includes('hourly rate')) hourlyRateColIndex = j;
+      if (cell.includes('name') || cell.includes('employee')) nameColIndex = j;
+      if (cell.includes('rate') || cell.includes('overtime')) rateColIndex = j;
     }
     
-    if (nameColIndex !== -1 && differentRateColIndex !== -1 && hourlyRateColIndex !== -1) {
-      // Process remaining rows
+    if (nameColIndex !== -1 && rateColIndex !== -1) {
+      // Process remaining rows  
       for (let k = i + 1; k < data.length; k++) {
         const empRow = data[k] as any[];
         if (!empRow) continue;
         
         const nameCell = empRow[nameColIndex];
-        const differentRate = String(empRow[differentRateColIndex]).toLowerCase();
-        const hourlyRate = parseFloat(String(empRow[hourlyRateColIndex])) || null;
+        const rateValue = empRow[rateColIndex];
         
         if (!nameCell) continue;
         
@@ -302,16 +297,27 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
         if (!fuzzyResult.match) continue;
         
         const employeeName = fuzzyResult.match;
+        
+        // Parse the rate - handle both number and string formats
+        let overtimeRate = null;
+        if (rateValue !== undefined && rateValue !== null && rateValue !== '') {
+          const rateStr = String(rateValue).replace(/[^0-9.]/g, ''); // Remove currency symbols
+          const parsedRate = parseFloat(rateStr);
+          if (!isNaN(parsedRate) && parsedRate > 0) {
+            overtimeRate = parsedRate;
+          }
+        }
+        
         if (employeeData.has(employeeName)) {
           const employee = employeeData.get(employeeName);
           
-          if (differentRate === 'yes' && hourlyRate) {
-            // Apply overtime rate to all entries for this employee
-            employee.entries.forEach((entry: any) => {
-              entry.overtime_rate = hourlyRate;
-            });
-            
-            employee.validationNotes.push(`Overtime rate applied: $${hourlyRate.toFixed(2)}.`);
+          // Apply overtime rate to all entries for this employee
+          employee.entries.forEach((entry: any) => {
+            entry.overtime_rate = overtimeRate;
+          });
+          
+          if (overtimeRate) {
+            employee.validationNotes.push(`Overtime rate applied: $${overtimeRate.toFixed(2)}.`);
           } else {
             employee.validationNotes.push("Overtime rate applied: Standard.");
           }
