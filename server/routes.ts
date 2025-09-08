@@ -408,11 +408,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const tokenSet = xeroTokens as any;
           xero.setTokenSet(tokenSet);
-          const tenants = await xero.updateTenants();
-          if (tenants && tenants.length > 0) {
-            xeroTenantId = tenants[0].tenantId;
-            console.log('Xero tenant ID stored:', xeroTenantId);
+          
+          // For payroll-only scopes, we can't call updateTenants() as it requires accounting scope
+          // The SDK should have tenant info after OAuth callback - check internal state
+          const sdk = xero as any;
+          if (sdk.tenants && sdk.tenants.length > 0) {
+            xeroTenantId = sdk.tenants[0].tenantId;
+            console.log('Got tenant ID from SDK state after callback:', xeroTenantId);
+          } else {
+            console.log('No tenants in SDK state, will get it during status check');
           }
+          
         } catch (tenantError) {
           console.error('Failed to get tenant ID:', tenantError);
         }
@@ -479,13 +485,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Since we have payroll scopes, test with payroll API instead of accounting
         // Use the stored tenant ID for the API call
         if (!xeroTenantId) {
-          // Try to get tenant ID if we don't have it
-          const tenants = await xero.updateTenants();
-          if (tenants && tenants.length > 0) {
-            xeroTenantId = tenants[0].tenantId;
-            console.log('Got tenant ID:', xeroTenantId);
-            // Save the updated tenant ID to file
-            saveTokens();
+          // For payroll-only scopes, we can't call updateTenants()
+          // Try to get tenant ID from SDK internal state or use a known pattern
+          console.log('No tenant ID available, trying payroll API call...');
+          try {
+            // Try calling with empty tenant ID - the SDK might populate it automatically
+            await xero.payrollAUApi.getEmployees('');
+          } catch (apiError: any) {
+            // Even if this fails, the SDK might have populated tenant info
+            const sdk = xero as any;
+            if (sdk.tenants && sdk.tenants.length > 0) {
+              xeroTenantId = sdk.tenants[0].tenantId;
+              console.log('Extracted tenant ID from SDK:', xeroTenantId);
+              saveTokens();
+            } else {
+              console.log('Will try with hardcoded tenant ID pattern...');
+              // As last resort, extract from the error headers if available
+              if (apiError?.response?.request?.headers?.['xero-tenant-id']) {
+                xeroTenantId = apiError.response.request.headers['xero-tenant-id'];
+                console.log('Got tenant ID from error headers:', xeroTenantId);
+                saveTokens();
+              }
+            }
           }
         }
         
