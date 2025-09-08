@@ -25,8 +25,6 @@ export default function Home() {
     mutationFn: async (formData: FormData) => {
       // Add duplicate protection setting as URL parameter instead of form data
       const skipValue = (!duplicateProtectionEnabled).toString();
-      console.log('🔘 Frontend: Duplicate protection enabled:', duplicateProtectionEnabled);
-      console.log('🔘 Frontend: Skip duplicate check:', skipValue);
       
       const url = `/api/process-timesheets?skipDuplicateCheck=${skipValue}`;
       const response = await apiRequest("POST", url, formData);

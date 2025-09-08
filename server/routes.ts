@@ -192,8 +192,8 @@ function processSiteTimesheet(workbook: XLSX.WorkBook) {
         if (existingEntry) {
           // Add to existing entry
           existingEntry.hours += hours;
-        } else if (hours > 0) {
-          // Create new entry
+        } else {
+          // Create new entry with total hours for this date/region/type
           employee.entries.push({
             entry_date: dateString,
             region_name: regionName,
@@ -214,47 +214,75 @@ function processTravelTimesheet(workbook: XLSX.WorkBook, employeeData: Map<strin
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
   
-  // Process travel data
-  for (let i = 1; i < data.length; i++) {
+  // Look for headers to find the right columns
+  let nameColIndex = -1;
+  let dateColIndex = -1;
+  let hoursColIndex = -1;
+  let regionColIndex = -1;
+  
+  for (let i = 0; i < data.length; i++) {
     const row = data[i] as any[];
-    if (!row || row.length === 0) continue;
+    if (!row) continue;
     
-    const nameCell = row[0];
-    const travelHours = parseFloat(String(row[1])) || 0;
-    
-    if (!nameCell || travelHours === 0) continue;
-    
-    const nameStr = String(nameCell).trim();
-    const fuzzyResult = fuzzyMatch(nameStr, KNOWN_EMPLOYEES);
-    
-    if (!fuzzyResult.match) continue;
-    
-    const employeeName = fuzzyResult.match;
-    if (!employeeData.has(employeeName)) {
-      employeeData.set(employeeName, {
-        name: employeeName,
-        matchedFrom: nameStr,
-        entries: [],
-        validationNotes: [`Successfully matched "${nameStr}" from timesheet.`],
-      });
+    for (let j = 0; j < row.length; j++) {
+      const cell = String(row[j]).toLowerCase();
+      if (cell.includes('name') || cell.includes('employee')) nameColIndex = j;
+      if (cell.includes('date')) dateColIndex = j;
+      if (cell.includes('hours') || cell.includes('time')) hoursColIndex = j;
+      if (cell.includes('region') || cell.includes('location')) regionColIndex = j;
     }
     
-    // Distribute travel hours across working days (5 days)
-    const workingDays = 5;
-    const hoursPerDay = travelHours / workingDays;
-    const baseDate = new Date('2025-06-02'); // Monday
-    
-    for (let dayIndex = 0; dayIndex < workingDays; dayIndex++) {
-      const entryDate = new Date(baseDate);
-      entryDate.setDate(baseDate.getDate() + dayIndex);
-      
-      employeeData.get(employeeName).entries.push({
-        entry_date: entryDate.toISOString().split('T')[0],
-        region_name: "Eastside", // Default region for travel
-        hours: hoursPerDay,
-        hour_type: "TRAVEL",
-        overtime_rate: null,
-      });
+    if (nameColIndex !== -1 && hoursColIndex !== -1) {
+      // Process travel entries
+      for (let k = i + 1; k < data.length; k++) {
+        const travelRow = data[k] as any[];
+        if (!travelRow) continue;
+        
+        const nameCell = travelRow[nameColIndex];
+        const travelHours = parseFloat(String(travelRow[hoursColIndex])) || 0;
+        const travelDate = travelRow[dateColIndex];
+        const travelRegion = travelRow[regionColIndex] || "Eastside"; // Default region
+        
+        if (!nameCell || travelHours === 0) continue;
+        
+        const nameStr = String(nameCell).trim();
+        const fuzzyResult = fuzzyMatch(nameStr, KNOWN_EMPLOYEES);
+        
+        if (!fuzzyResult.match) continue;
+        
+        const employeeName = fuzzyResult.match;
+        if (!employeeData.has(employeeName)) {
+          employeeData.set(employeeName, {
+            name: employeeName,
+            matchedFrom: nameStr,
+            entries: [],
+            validationNotes: [`Successfully matched "${nameStr}" from timesheet.`],
+          });
+        }
+        
+        // Parse travel date or use a default date
+        let entryDate = "2025-06-02"; // Default
+        if (travelDate) {
+          try {
+            const parsedDate = new Date(travelDate);
+            if (!isNaN(parsedDate.getTime())) {
+              entryDate = parsedDate.toISOString().split('T')[0];
+            }
+          } catch (e) {
+            // Use default date if parsing fails
+          }
+        }
+        
+        // Add travel entry
+        employeeData.get(employeeName).entries.push({
+          entry_date: entryDate,
+          region_name: String(travelRegion).trim(),
+          hours: travelHours,
+          hour_type: "TRAVEL",
+          overtime_rate: null,
+        });
+      }
+      break;
     }
   }
   
@@ -571,10 +599,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const skipDuplicateCheck = req.query.skipDuplicateCheck === 'true';
       
       console.log('Received files:', files ? Object.keys(files) : 'No files');
-      console.log('Request content-type:', req.headers['content-type']);
-      console.log('Query params:', req.query);
-      console.log('Skip duplicate check value:', req.query.skipDuplicateCheck);
-      console.log('Skip duplicate check boolean:', skipDuplicateCheck);
       
       // Check for duplicate submission before processing (unless disabled)
       if (files && !skipDuplicateCheck) {
@@ -632,10 +656,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const overtimeWorkbook = parseExcelFile(files.overtime_rates[0].buffer, files.overtime_rates[0].originalname);
       employeeData = processOvertimeRates(overtimeWorkbook.workbook, employeeData);
       
-      // Generate consolidated data
+      // Generate consolidated data in exact target format
       const employees = Array.from(employeeData.values()).map(emp => ({
         employee_name: emp.name,
-        daily_entries: emp.entries,
+        daily_entries: emp.entries.map((entry: any) => ({
+          entry_date: entry.entry_date,
+          region_name: entry.region_name,
+          hours: entry.hours,
+          hour_type: entry.hour_type,
+          overtime_rate: entry.overtime_rate
+        }))
       }));
       
       const totalHours = employees.reduce((total, emp) => {
