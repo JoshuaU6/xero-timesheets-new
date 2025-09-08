@@ -287,6 +287,13 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  console.log('📝 Registering API routes...');
+  
+  // Test route to verify basic routing works
+  app.get("/api/test", (req, res) => {
+    console.log('API test route hit successfully!');
+    res.json({ message: "API is working!" });
+  });
   
   // Xero OAuth routes
   app.get("/api/xero/connect", async (req, res) => {
@@ -535,6 +542,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+  console.log('✅ All routes registered successfully');
+  console.log('🔄 Available routes:');
+  console.log('  GET /api/test');
+  console.log('  GET /api/xero/connect');  
+  console.log('  GET /xero-callback-test');
+  console.log('  GET /xero-callback');
+  console.log('  GET /api/xero/status');
+  console.log('  POST /api/xero/post-timesheets');
+  console.log('  POST /api/process-timesheets');
+  console.log('  GET /api/processing-results/:id');
+  console.log('  GET /api/processing-results');
 
   const httpServer = createServer(app);
   return httpServer;
