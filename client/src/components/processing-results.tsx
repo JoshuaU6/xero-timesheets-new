@@ -193,7 +193,7 @@ export function ProcessingResults({ result }: ProcessingResultsProps) {
           </div>
 
           {/* Parsing Results Summary */}
-          <div className="space-y-4">
+          <div className="space-y-4 mb-8">
             <h3 className="text-xl font-semibold text-foreground">Parsing Results Summary</h3>
             
             <div className="space-y-2 text-sm">
