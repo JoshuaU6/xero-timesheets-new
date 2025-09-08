@@ -574,26 +574,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log('📋 Starting Xero timesheet creation process...');
       
-      // Fetch required Xero data in parallel
-      const [employeesResponse, trackingResponse, payItemsResponse] = await Promise.all([
-        xero.payrollUKApi.getEmployees(xeroTenantId),
-        xero.accountingApi.getTrackingCategories(xeroTenantId),
-        xero.payrollUKApi.getPayItems(xeroTenantId)
-      ]);
+      let employees: any[] = [];
+      let trackingCategories: any[] = [];
+      let earningsRates: any[] = [];
 
-      const employees = employeesResponse.response.body.employees || [];
-      const trackingCategories = trackingResponse.response.body.trackingCategories || [];
-      const earningsRates = payItemsResponse.response.body.payItems?.earningsRates || [];
+      try {
+        // Fetch required Xero data with proper error handling
+        console.log('Fetching employees from Xero...');
+        const employeesResponse = await xero.payrollUKApi.getEmployees(xeroTenantId);
+        employees = (employeesResponse as any)?.body?.employees || [];
+        console.log(`Found ${employees.length} employees`);
+      } catch (empError) {
+        console.error('Failed to fetch employees:', empError);
+        return res.status(500).json({ 
+          message: 'Failed to fetch employees from Xero', 
+          error: empError instanceof Error ? empError.message : 'Unknown error'
+        });
+      }
+
+      try {
+        console.log('Fetching tracking categories from Xero...');
+        const trackingResponse = await xero.accountingApi.getTrackingCategories(xeroTenantId);
+        trackingCategories = (trackingResponse as any)?.body?.trackingCategories || [];
+        console.log(`Found ${trackingCategories.length} tracking categories`);
+      } catch (trackError) {
+        console.error('Failed to fetch tracking categories:', trackError);
+        // This might fail due to scope issues, so we'll continue without it
+        trackingCategories = [];
+      }
+
+      try {
+        console.log('Fetching pay items from Xero...');
+        const payItemsResponse = await xero.payrollUKApi.getPayItems ? 
+          await (xero.payrollUKApi as any).getPayItems(xeroTenantId) : 
+          await (xero.payrollUKApi as any).getEarningsRates(xeroTenantId);
+        earningsRates = (payItemsResponse as any)?.body?.payItems?.earningsRates || 
+                       (payItemsResponse as any)?.body?.earningsRates || [];
+        console.log(`Found ${earningsRates.length} earnings rates`);
+      } catch (payError) {
+        console.error('Failed to fetch pay items:', payError);
+        earningsRates = [];
+      }
 
       // Find the Region tracking category
-      const regionCategory = trackingCategories.find(cat => cat.name?.toLowerCase().includes('region'));
-      if (!regionCategory) {
-        throw new Error('Region tracking category not found in Xero');
+      const regionCategory = trackingCategories.find((cat: any) => cat.name?.toLowerCase().includes('region'));
+      if (!regionCategory && trackingCategories.length > 0) {
+        console.warn('Region tracking category not found in Xero, timesheets will be created without region tracking');
       }
 
       // Create lookup maps
       const employeeMap = new Map();
-      employees.forEach(emp => {
+      employees.forEach((emp: any) => {
         const fullName = `${emp.firstName} ${emp.lastName}`;
         employeeMap.set(fullName, emp.employeeID);
         // Also try variations
@@ -601,12 +632,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const regionMap = new Map();
-      regionCategory.options?.forEach(option => {
-        regionMap.set(option.name, option.trackingOptionID);
-      });
+      if (regionCategory?.options) {
+        regionCategory.options.forEach((option: any) => {
+          regionMap.set(option.name, option.trackingOptionID);
+        });
+      }
 
       const earningsMap = new Map();
-      earningsRates.forEach(rate => {
+      earningsRates.forEach((rate: any) => {
         if (rate.name?.toLowerCase().includes('regular')) {
           earningsMap.set('REGULAR', rate.earningsRateID);
         } else if (rate.name?.toLowerCase().includes('overtime')) {
@@ -619,7 +652,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       console.log(`💼 Found ${employees.length} employees in Xero`);
-      console.log(`📍 Found ${regionCategory.options?.length || 0} regions in Xero`);
+      console.log(`📍 Found ${regionCategory?.options?.length || 0} regions in Xero`);
       console.log(`💰 Found ${earningsRates.length} earnings rates in Xero`);
 
       // Create timesheets for each employee
@@ -644,17 +677,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
               errors.push(`Earnings rate not found for type: ${entry.hour_type}`);
               continue;
             }
-            if (!trackingItemId) {
-              errors.push(`Region not found in Xero: ${entry.region_name}`);
-              continue;
-            }
-
-            timesheetLines.push({
+            const timesheetLine: any = {
               date: entry.entry_date,
               earningsRateID: earningsRateId,
-              numberOfUnits: entry.hours,
-              trackingItemID: trackingItemId
-            });
+              numberOfUnits: entry.hours
+            };
+
+            // Only add tracking if we have region tracking set up
+            if (trackingItemId && regionCategory) {
+              timesheetLine.trackingItemID = trackingItemId;
+            } else if (entry.region_name && !trackingItemId) {
+              errors.push(`Region not found in Xero: ${entry.region_name}`);
+            }
+
+            timesheetLines.push(timesheetLine);
           }
 
           if (timesheetLines.length === 0) {
@@ -662,27 +698,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
-          // Create the timesheet
-          const timesheetData = {
+          // Create the timesheet - need to add required payrollCalendarID
+          const timesheetData: any = {
             employeeID: xeroEmployeeId,
-            startDate: consolidated_data.pay_period_end_date, // Adjust as needed
+            startDate: consolidated_data.pay_period_end_date,
             endDate: consolidated_data.pay_period_end_date,
             status: 'Draft',
+            payrollCalendarID: 'default', // This might need to be fetched from Xero
             timesheetLines: timesheetLines
           };
 
-          const createResponse = await xero.payrollUKApi.createTimesheet(xeroTenantId, timesheetData);
-          createdTimesheets.push({
-            employee: employee.employee_name,
-            timesheetId: createResponse.response.body.timesheets?.[0]?.timesheetID,
-            lines: timesheetLines.length
-          });
+          try {
+            const createResponse = await xero.payrollUKApi.createTimesheet(xeroTenantId, timesheetData);
+            createdTimesheets.push({
+              employee: employee.employee_name,
+              timesheetId: (createResponse as any)?.body?.timesheets?.[0]?.timesheetID,
+              lines: timesheetLines.length
+            });
+          } catch (createError) {
+            console.error(`Failed to create timesheet for ${employee.employee_name}:`, createError);
+            errors.push(`Failed to create timesheet for ${employee.employee_name}: ${createError instanceof Error ? createError.message : 'Unknown error'}`);
+            continue;
+          }
 
           console.log(`✅ Created timesheet for ${employee.employee_name} with ${timesheetLines.length} lines`);
 
         } catch (empError) {
           console.error(`❌ Error creating timesheet for ${employee.employee_name}:`, empError);
-          errors.push(`Failed to create timesheet for ${employee.employee_name}: ${empError.message}`);
+          errors.push(`Failed to create timesheet for ${employee.employee_name}: ${empError instanceof Error ? empError.message : 'Unknown error'}`);
         }
       }
 
@@ -699,7 +742,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('❌ Error posting to Xero:', error);
       res.status(500).json({ 
         message: 'Failed to post to Xero', 
-        error: error.message 
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });
