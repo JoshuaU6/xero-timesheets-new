@@ -568,12 +568,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   ]), async (req, res) => {
     try {
       const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
-      const skipDuplicateCheck = req.body.skipDuplicateCheck === 'true';
+      const skipDuplicateCheck = req.query.skipDuplicateCheck === 'true';
       
       console.log('Received files:', files ? Object.keys(files) : 'No files');
       console.log('Request content-type:', req.headers['content-type']);
-      console.log('Request body keys:', Object.keys(req.body));
-      console.log('Skip duplicate check value:', req.body.skipDuplicateCheck);
+      console.log('Query params:', req.query);
+      console.log('Skip duplicate check value:', req.query.skipDuplicateCheck);
       console.log('Skip duplicate check boolean:', skipDuplicateCheck);
       
       // Check for duplicate submission before processing (unless disabled)
