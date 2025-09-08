@@ -227,7 +227,7 @@ export default function Home() {
         <div className="container mx-auto px-6 py-8">
           <div className="flex items-center justify-between">
             <div className="text-sm text-muted-foreground">
-              © 2024 EarlyAdoptersHub. MVP Solution for automated timesheet processing.
+              © 2025 EarlyAdoptersHub. MVP Solution for automated timesheet processing.
             </div>
             <div className="flex items-center space-x-4">
               <a href="#" className="text-muted-foreground hover:text-foreground text-sm">Documentation</a>
