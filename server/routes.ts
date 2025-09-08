@@ -38,14 +38,17 @@ const tokenFile = join(process.cwd(), '.xero-tokens.json');
 
 function loadTokens() {
   try {
+    console.log('🔍 Checking for token file at:', tokenFile);
     if (existsSync(tokenFile)) {
       const data = JSON.parse(readFileSync(tokenFile, 'utf8'));
       xeroTokens = data.tokens;
       xeroTenantId = data.tenantId || '';
-      console.log('Loaded tokens from file:', !!xeroTokens);
+      console.log('✅ Loaded tokens from file:', !!xeroTokens, 'tenantId:', !!xeroTenantId);
+    } else {
+      console.log('❌ No token file exists yet');
     }
   } catch (error) {
-    console.log('No existing tokens file found');
+    console.log('🚨 Error loading tokens:', error);
   }
 }
 
@@ -457,6 +460,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Checking Xero status...');
       console.log('Tokens available:', xeroTokens ? 'Yes' : 'No');
       
+      // If no tokens in memory, try reloading from file
+      if (!xeroTokens) {
+        console.log('No tokens in memory, reloading from file...');
+        loadTokens();
+        console.log('After reload - Tokens:', !!xeroTokens, 'Tenant:', !!xeroTenantId);
+      }
+      
       if (!xeroTokens) {
         console.log('No tokens found');
         return res.json({ connected: false });
@@ -474,6 +484,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (tenants && tenants.length > 0) {
             xeroTenantId = tenants[0].tenantId;
             console.log('Got tenant ID:', xeroTenantId);
+            // Save the updated tenant ID to file
+            saveTokens();
           }
         }
         
