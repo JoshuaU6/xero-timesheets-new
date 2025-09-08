@@ -545,6 +545,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         employees_processed: consolidated_data.employees.length
       });
       
+      // TODO: When implementing real Xero submission, update submission status:
+      // await storage.updateSubmissionStatus(submissionId, "completed", processingResultId);
+      
     } catch (error) {
       console.error('Error posting to Xero:', error);
       res.status(500).json({ message: 'Failed to post to Xero' });

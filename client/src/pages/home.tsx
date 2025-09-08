@@ -22,6 +22,21 @@ export default function Home() {
   const processFilesMutation = useMutation({
     mutationFn: async (formData: FormData) => {
       const response = await apiRequest("POST", "/api/process-timesheets", formData);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        
+        // Handle duplicate submission case
+        if (response.status === 409 && errorData.isDuplicate) {
+          const error = new Error(errorData.message) as Error & { isDuplicate: boolean; existingSubmission: any };
+          error.isDuplicate = true;
+          error.existingSubmission = errorData.existingSubmission;
+          throw error;
+        }
+        
+        throw new Error(errorData.message || 'Processing failed');
+      }
+      
       return response.json();
     },
     onSuccess: (result: ProcessingResult) => {
@@ -32,12 +47,20 @@ export default function Home() {
         description: `Successfully processed timesheet data for ${result.summary.employees_found} employees.`,
       });
     },
-    onError: (error: Error) => {
-      toast({
-        title: "Processing Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+    onError: (error: Error & { isDuplicate?: boolean; existingSubmission?: any }) => {
+      if (error.isDuplicate && error.existingSubmission) {
+        toast({
+          title: "⚠️ Duplicate Submission Detected",
+          description: `These files were already processed on ${new Date(error.existingSubmission.created_at).toLocaleDateString()}. Status: ${error.existingSubmission.xero_submission_status}`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Processing Failed",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     },
   });
 
