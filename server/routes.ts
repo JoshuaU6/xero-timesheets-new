@@ -303,19 +303,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Test route to verify routing works at all
   app.get("/api/test", (req, res) => {
     console.log('🧪 TEST ROUTE HIT - ROUTING IS WORKING!');
+    res.set({
+      'X-Test-Route': 'test-handler-executed',
+      'X-Test-Time': Date.now().toString()
+    });
     res.json({ message: 'Test route working', timestamp: Date.now() });
   });
 
-  // Register the specific route AFTER middleware
+  // Register the specific route AFTER middleware  
   app.get("/api/xero/connect-new", async (req, res) => {
     console.log('🎯🎯🎯 CONNECT-NEW ROUTE HIT!!! Starting Xero connection...');
     console.log('🎯 ROUTE HANDLER STARTED! Inside /api/xero/connect-new');
     
-    // Add no-cache headers to prevent caching issues
+    // Add no-cache headers to prevent caching issues + PROOF OF EXECUTION
     res.set({
       'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
+      'Pragma': 'no-cache', 
+      'Expires': '0',
+      'X-Route-Hit': 'connect-new-handler-executed',
+      'X-Timestamp': Date.now().toString()
     });
     
     try {
