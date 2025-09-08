@@ -572,19 +572,135 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       xero.setTokenSet(xeroTokens);
       
-      // For now, return success message - full implementation would post to Xero API
+      console.log('📋 Starting Xero timesheet creation process...');
+      
+      // Fetch required Xero data in parallel
+      const [employeesResponse, trackingResponse, payItemsResponse] = await Promise.all([
+        xero.payrollUKApi.getEmployees(xeroTenantId),
+        xero.accountingApi.getTrackingCategories(xeroTenantId),
+        xero.payrollUKApi.getPayItems(xeroTenantId)
+      ]);
+
+      const employees = employeesResponse.response.body.employees || [];
+      const trackingCategories = trackingResponse.response.body.trackingCategories || [];
+      const earningsRates = payItemsResponse.response.body.payItems?.earningsRates || [];
+
+      // Find the Region tracking category
+      const regionCategory = trackingCategories.find(cat => cat.name?.toLowerCase().includes('region'));
+      if (!regionCategory) {
+        throw new Error('Region tracking category not found in Xero');
+      }
+
+      // Create lookup maps
+      const employeeMap = new Map();
+      employees.forEach(emp => {
+        const fullName = `${emp.firstName} ${emp.lastName}`;
+        employeeMap.set(fullName, emp.employeeID);
+        // Also try variations
+        employeeMap.set(`${emp.firstName} ${emp.lastName?.charAt(0)}.`, emp.employeeID);
+      });
+
+      const regionMap = new Map();
+      regionCategory.options?.forEach(option => {
+        regionMap.set(option.name, option.trackingOptionID);
+      });
+
+      const earningsMap = new Map();
+      earningsRates.forEach(rate => {
+        if (rate.name?.toLowerCase().includes('regular')) {
+          earningsMap.set('REGULAR', rate.earningsRateID);
+        } else if (rate.name?.toLowerCase().includes('overtime')) {
+          earningsMap.set('OVERTIME', rate.earningsRateID);
+        } else if (rate.name?.toLowerCase().includes('travel')) {
+          earningsMap.set('TRAVEL', rate.earningsRateID);
+        } else if (rate.name?.toLowerCase().includes('holiday')) {
+          earningsMap.set('HOLIDAY', rate.earningsRateID);
+        }
+      });
+
+      console.log(`💼 Found ${employees.length} employees in Xero`);
+      console.log(`📍 Found ${regionCategory.options?.length || 0} regions in Xero`);
+      console.log(`💰 Found ${earningsRates.length} earnings rates in Xero`);
+
+      // Create timesheets for each employee
+      const createdTimesheets = [];
+      const errors = [];
+
+      for (const employee of consolidated_data.employees) {
+        try {
+          const xeroEmployeeId = employeeMap.get(employee.employee_name);
+          if (!xeroEmployeeId) {
+            errors.push(`Employee not found in Xero: ${employee.employee_name}`);
+            continue;
+          }
+
+          // Build timesheet lines
+          const timesheetLines = [];
+          for (const entry of employee.daily_entries) {
+            const earningsRateId = earningsMap.get(entry.hour_type);
+            const trackingItemId = regionMap.get(entry.region_name);
+
+            if (!earningsRateId) {
+              errors.push(`Earnings rate not found for type: ${entry.hour_type}`);
+              continue;
+            }
+            if (!trackingItemId) {
+              errors.push(`Region not found in Xero: ${entry.region_name}`);
+              continue;
+            }
+
+            timesheetLines.push({
+              date: entry.entry_date,
+              earningsRateID: earningsRateId,
+              numberOfUnits: entry.hours,
+              trackingItemID: trackingItemId
+            });
+          }
+
+          if (timesheetLines.length === 0) {
+            errors.push(`No valid timesheet lines for employee: ${employee.employee_name}`);
+            continue;
+          }
+
+          // Create the timesheet
+          const timesheetData = {
+            employeeID: xeroEmployeeId,
+            startDate: consolidated_data.pay_period_end_date, // Adjust as needed
+            endDate: consolidated_data.pay_period_end_date,
+            status: 'Draft',
+            timesheetLines: timesheetLines
+          };
+
+          const createResponse = await xero.payrollUKApi.createTimesheet(xeroTenantId, timesheetData);
+          createdTimesheets.push({
+            employee: employee.employee_name,
+            timesheetId: createResponse.response.body.timesheets?.[0]?.timesheetID,
+            lines: timesheetLines.length
+          });
+
+          console.log(`✅ Created timesheet for ${employee.employee_name} with ${timesheetLines.length} lines`);
+
+        } catch (empError) {
+          console.error(`❌ Error creating timesheet for ${employee.employee_name}:`, empError);
+          errors.push(`Failed to create timesheet for ${employee.employee_name}: ${empError.message}`);
+        }
+      }
+
       res.json({ 
         success: true, 
-        message: 'Draft pay run would be created in Xero',
-        employees_processed: consolidated_data.employees.length
+        message: `Created ${createdTimesheets.length} draft timesheets in Xero`,
+        created_timesheets: createdTimesheets,
+        errors: errors.length > 0 ? errors : undefined,
+        employees_processed: createdTimesheets.length,
+        total_employees: consolidated_data.employees.length
       });
       
-      // TODO: When implementing real Xero submission, update submission status:
-      // await storage.updateSubmissionStatus(submissionId, "completed", processingResultId);
-      
     } catch (error) {
-      console.error('Error posting to Xero:', error);
-      res.status(500).json({ message: 'Failed to post to Xero' });
+      console.error('❌ Error posting to Xero:', error);
+      res.status(500).json({ 
+        message: 'Failed to post to Xero', 
+        error: error.message 
+      });
     }
   });
 
