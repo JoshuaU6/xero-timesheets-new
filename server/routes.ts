@@ -310,6 +310,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const consentUrl = await xero.buildConsentUrl();
       console.log('🎯 Consent URL generated successfully:', consentUrl.substring(0, 100) + '...');
+      console.log('🔗 Redirect URI in consent URL:', consentUrl.includes('redirect_uri=') ? 
+        decodeURIComponent(consentUrl.split('redirect_uri=')[1].split('&')[0]) : 'Not found');
       console.log('🎯 Sending JSON response...');
       
       res.json({ consentUrl });
@@ -338,6 +340,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('🎯🎯🎯 CALLBACK ROUTE HIT! Processing Xero callback...');
       console.log('Full callback URL:', req.originalUrl);
       console.log('Query params:', req.query);
+      console.log('Authorization code present:', !!req.query.code);
+      console.log('Error parameter:', req.query.error);
       
       await xero.apiCallback(req.originalUrl);
       xeroTokens = xero.readTokenSet();
