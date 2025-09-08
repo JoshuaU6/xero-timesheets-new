@@ -289,7 +289,18 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log('📝 Registering API routes...');
   
-  // Register the specific route FIRST, before any middleware
+  // Debug ALL requests first
+  app.use('/api', (req, res, next) => {
+    console.log(`🔍 ALL API REQUEST: ${req.method} ${req.originalUrl}`);
+    next();
+  });
+  
+  app.use('/api/xero', (req, res, next) => {
+    console.log(`🚨 XERO ROUTE HIT: ${req.method} ${req.path} - ${req.originalUrl}`);
+    next();
+  });
+
+  // Register the specific route AFTER middleware
   app.get("/api/xero/connect-new", async (req, res) => {
     console.log('🎯 ROUTE HANDLER STARTED! Inside /api/xero/connect-new');
     
@@ -322,17 +333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Debug ALL API requests to find what's happening (moved after route handlers)
-  app.use('/api', (req, res, next) => {
-    console.log(`🔍 ALL API REQUEST: ${req.method} ${req.originalUrl}`);
-    next();
-  });
-  
-  // Add middleware to debug Xero API requests specifically (moved after route handlers)
-  app.use('/api/xero', (req, res, next) => {
-    console.log(`🚨 XERO ROUTE HIT: ${req.method} ${req.path} - ${req.originalUrl}`);
-    next();
-  });
+  // Middleware moved to top of function
 
   // Make sure callback route is registered early and clearly
   app.get("/xero-callback", async (req, res) => {
