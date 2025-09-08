@@ -300,6 +300,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ message: 'Test route working', timestamp: Date.now() });
   });
 
+  // Debug route to check token storage
+  app.get("/api/xero/debug-tokens", (req, res) => {
+    console.log('🔍 DEBUG: Checking token storage...');
+    res.json({
+      tokensExist: !!xeroTokens,
+      hasAccessToken: !!xeroTokens?.access_token,
+      hasRefreshToken: !!xeroTokens?.refresh_token,
+      tokenType: typeof xeroTokens,
+      timestamp: Date.now()
+    });
+  });
+
   // Register connect-new route FIRST, before middleware
   app.get("/api/xero/connect-new", async (req, res) => {
     console.log('🎯🎯🎯 CONNECT-NEW ROUTE HIT!!! Starting Xero connection...');
@@ -338,24 +350,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Callback route BEFORE middleware  
   app.get("/xero-callback", async (req, res) => {
-    console.log('🎯🎯🎯 CALLBACK ROUTE HIT! Processing Xero callback...');
-    console.log('Full callback URL:', req.originalUrl);
-    console.log('Query params:', req.query);
-    console.log('Authorization code present:', !!req.query.code);
-    console.log('Error parameter:', req.query.error);
+    // Use response headers to debug since console.log isn't working
+    res.set({
+      'X-Callback-Hit': 'true',
+      'X-Code-Present': String(!!req.query.code),
+      'X-Error-Present': String(!!req.query.error)
+    });
     
     try {
-      console.log('🔄 Processing OAuth callback...');
-      await xero.apiCallback(req.originalUrl);
-      console.log('🔄 OAuth callback processed, reading tokens...');
+      if (!req.query.code) {
+        throw new Error('No authorization code received');
+      }
       
+      await xero.apiCallback(req.originalUrl);
       xeroTokens = xero.readTokenSet();
-      console.log('🔄 Raw tokens from Xero:', xeroTokens);
-      console.log('🔄 Tokens stored globally:', {
-        hasAccessToken: !!xeroTokens?.access_token,
-        hasRefreshToken: !!xeroTokens?.refresh_token,
-        expiresIn: xeroTokens?.expires_in,
-        tokenType: typeof xeroTokens
+      
+      // Add debug headers to track token storage
+      res.set({
+        'X-Tokens-Stored': String(!!xeroTokens),
+        'X-Has-Access-Token': String(!!xeroTokens?.access_token)
       });
       res.send(`
         <!DOCTYPE html>
