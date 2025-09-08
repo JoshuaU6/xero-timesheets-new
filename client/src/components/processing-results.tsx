@@ -36,10 +36,10 @@ export function ProcessingResults({ result }: ProcessingResultsProps) {
   const handleConnectXero = async () => {
     try {
       console.log('🔘 Frontend: Starting Xero connection process...');
-      console.log('🔘 Frontend: Making API call to /api/xero/connect');
+      console.log('🔘 Frontend: Making API call to /api/xero/connect-new');
       // Add cache buster to prevent cached responses
       const cacheBuster = Date.now();
-      const response = await apiRequest("GET", `/api/xero/connect?t=${cacheBuster}`);
+      const response = await apiRequest("GET", `/api/xero/connect-new?t=${cacheBuster}`);
       console.log('🔘 Frontend: Response received:', response.status);
       
       if (!response.ok) {

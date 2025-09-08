@@ -301,8 +301,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   });
   
-  // Xero OAuth routes with cache busting
-  app.get("/api/xero/connect", async (req, res) => {
+  // Xero OAuth routes with new endpoint name to bypass any caching/conflicts
+  app.get("/api/xero/connect-new", async (req, res) => {
     // Add no-cache headers to prevent caching issues
     res.set({
       'Cache-Control': 'no-cache, no-store, must-revalidate',
