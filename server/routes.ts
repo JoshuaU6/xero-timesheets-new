@@ -362,6 +362,95 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
   return employeeData;
 }
 
+// Calculate and split overtime hours (hours over 40 per week)
+function calculateOvertimeHours(employeeData: Map<string, any>) {
+  console.log('📊 Calculating overtime hours for employees...');
+  
+  for (const [employeeName, employee] of Array.from(employeeData.entries())) {
+    // Group entries by week
+    const weeklyEntries = new Map<string, any[]>();
+    
+    for (const entry of employee.entries) {
+      if (entry.hour_type !== "REGULAR") continue; // Only process regular hours for overtime calc
+      
+      // Get week start date (Monday) for this entry
+      const entryDate = new Date(entry.entry_date);
+      const weekStart = getWeekStart(entryDate);
+      const weekKey = weekStart.toISOString().split('T')[0];
+      
+      if (!weeklyEntries.has(weekKey)) {
+        weeklyEntries.set(weekKey, []);
+      }
+      weeklyEntries.get(weekKey)!.push(entry);
+    }
+    
+    // Process each week
+    for (const [weekKey, weekEntries] of Array.from(weeklyEntries.entries())) {
+      const totalWeeklyHours = weekEntries.reduce((sum: number, entry: any) => sum + entry.hours, 0);
+      
+      if (totalWeeklyHours > 40) {
+        const overtimeHours = totalWeeklyHours - 40;
+        console.log(`⏰ ${employeeName}: ${totalWeeklyHours}h total, ${overtimeHours}h overtime for week of ${weekKey}`);
+        
+        // Reduce regular hours to 40 total and create overtime entries
+        redistributeHoursForOvertime(weekEntries, overtimeHours, employee);
+        
+        // Add validation note
+        if (!employee.validationNotes.some((note: string) => note.includes('overtime'))) {
+          employee.validationNotes.push(`Overtime hours calculated and separated from regular hours.`);
+        }
+      }
+    }
+  }
+  
+  return employeeData;
+}
+
+// Get the Monday of the week for a given date
+function getWeekStart(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+  return new Date(d.setDate(diff));
+}
+
+// Redistribute hours when overtime is detected
+function redistributeHoursForOvertime(weekEntries: any[], overtimeHours: number, employee: any) {
+  let remainingOvertimeToDistribute = overtimeHours;
+  
+  // Process entries from last day to first to distribute overtime
+  for (let i = weekEntries.length - 1; i >= 0 && remainingOvertimeToDistribute > 0; i--) {
+    const entry = weekEntries[i];
+    const entryOvertimeHours = Math.min(entry.hours, remainingOvertimeToDistribute);
+    
+    if (entryOvertimeHours > 0) {
+      // Reduce regular hours
+      entry.hours -= entryOvertimeHours;
+      remainingOvertimeToDistribute -= entryOvertimeHours;
+      
+      // Create overtime entry for this date/region
+      const overtimeEntry = {
+        entry_date: entry.entry_date,
+        region_name: entry.region_name,
+        hours: entryOvertimeHours,
+        hour_type: "OVERTIME",
+        overtime_rate: entry.overtime_rate,
+      };
+      
+      employee.entries.push(overtimeEntry);
+      console.log(`  📈 Created overtime entry: ${entryOvertimeHours}h on ${entry.entry_date}`);
+    }
+    
+    // Remove entries with 0 hours
+    if (entry.hours === 0) {
+      const index = employee.entries.indexOf(entry);
+      if (index > -1) {
+        employee.entries.splice(index, 1);
+      }
+    }
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log('📝 Registering API routes...');
   
@@ -662,6 +751,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const overtimeWorkbook = parseExcelFile(files.overtime_rates[0].buffer, files.overtime_rates[0].originalname);
       employeeData = processOvertimeRates(overtimeWorkbook.workbook, employeeData);
       
+      // Calculate and split overtime hours (hours over 40 per week)
+      employeeData = calculateOvertimeHours(employeeData);
+      
       // Generate consolidated data in exact target format
       const employees = Array.from(employeeData.values()).map(emp => ({
         employee_name: emp.name,
@@ -682,7 +774,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const employeeSummaries = Array.from(employeeData.values()).map(emp => {
         const regularHours = emp.entries.filter((e: any) => e.hour_type === 'REGULAR').reduce((sum: number, e: any) => sum + e.hours, 0);
         const overtimeHours = emp.entries.filter((e: any) => e.hour_type === 'OVERTIME').reduce((sum: number, e: any) => sum + e.hours, 0);
-        const travelHours = emp.entries.filter((e: any) => e.hour_type === 'TRAVEL').reduce((sum: number, e: any) => sum + e.hours, 0);
+        const travelHours = 0; // Travel hours are now included in regular hours as per client feedback
         const holidayHours = emp.entries.filter((e: any) => e.hour_type === 'HOLIDAY').reduce((sum: number, e: any) => sum + e.hours, 0);
         const totalEmpHours = regularHours + overtimeHours + travelHours + holidayHours;
         
