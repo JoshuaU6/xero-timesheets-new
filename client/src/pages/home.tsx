@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { FileUpload } from "@/components/file-upload";
 import { ProcessingResults } from "@/components/processing-results";
+import { FuzzyMatchConfirmation } from "@/components/fuzzy-match-confirmation";
 import { ProcessingResult } from "@shared/schema";
 import { Moon, Sun, FlaskConical } from "lucide-react";
 
@@ -14,6 +15,8 @@ export default function Home() {
   const [currentResult, setCurrentResult] = useState<ProcessingResult | null>(null);
   const [xeroSubmitted, setXeroSubmitted] = useState(false);
   const [duplicateProtectionEnabled, setDuplicateProtectionEnabled] = useState(true);
+  const [pendingMatches, setPendingMatches] = useState<any[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<FormData | null>(null);
   const { toast } = useToast();
 
   const toggleTheme = () => {
@@ -45,13 +48,27 @@ export default function Home() {
       
       return response.json();
     },
-    onSuccess: (result: ProcessingResult) => {
-      setCurrentResult(result);
-      queryClient.invalidateQueries({ queryKey: ["/api/processing-results"] });
-      toast({
-        title: "Processing Complete",
-        description: `Successfully processed timesheet data for ${result.summary.employees_found} employees.`,
-      });
+    onSuccess: (result: any) => {
+      if (result.needsConfirmation) {
+        // Handle fuzzy match confirmations needed
+        setPendingMatches(result.pendingMatches);
+        setUploadedFiles(processFilesMutation.variables as FormData);
+        toast({
+          title: "Employee Name Confirmation Required",
+          description: `Found ${result.pendingMatches.length} employee name(s) that need confirmation.`,
+          variant: "default",
+        });
+      } else {
+        // Normal successful processing
+        setCurrentResult(result);
+        setPendingMatches([]);
+        setUploadedFiles(null);
+        queryClient.invalidateQueries({ queryKey: ["/api/processing-results"] });
+        toast({
+          title: "Processing Complete",
+          description: `Successfully processed timesheet data for ${result.summary.employees_found} employees.`,
+        });
+      }
     },
     onError: (error: Error & { isDuplicate?: boolean; existingSubmission?: any }) => {
       if (error.isDuplicate && error.existingSubmission) {
@@ -70,8 +87,49 @@ export default function Home() {
     },
   });
 
+  const processWithConfirmationsMutation = useMutation({
+    mutationFn: async ({ formData, confirmations }: { formData: FormData; confirmations: Record<string, string | null> }) => {
+      formData.append('confirmations', JSON.stringify(confirmations));
+      
+      const response = await apiRequest("POST", "/api/process-timesheets-with-confirmations", formData);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Processing with confirmations failed');
+      }
+      
+      return response.json();
+    },
+    onSuccess: (result: ProcessingResult) => {
+      setCurrentResult(result);
+      setPendingMatches([]);
+      setUploadedFiles(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/processing-results"] });
+      toast({
+        title: "Processing Complete",
+        description: `Successfully processed timesheet data for ${result.summary.employees_found} employees with confirmations.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Processing Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleFileUpload = (formData: FormData) => {
     processFilesMutation.mutate(formData);
+  };
+
+  const handleConfirmMatches = (confirmations: Record<string, string | null>) => {
+    if (uploadedFiles) {
+      processWithConfirmationsMutation.mutate({ 
+        formData: uploadedFiles, 
+        confirmations 
+      });
+    }
   };
 
   return (
@@ -216,6 +274,17 @@ export default function Home() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Fuzzy Match Confirmation Section */}
+        {pendingMatches.length > 0 && (
+          <div className="mb-8">
+            <FuzzyMatchConfirmation
+              pendingMatches={pendingMatches}
+              onConfirmMatches={handleConfirmMatches}
+              isProcessing={processWithConfirmationsMutation.isPending}
+            />
+          </div>
+        )}
 
         {/* Processing Results */}
         {currentResult && (

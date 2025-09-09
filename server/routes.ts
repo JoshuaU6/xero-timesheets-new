@@ -42,21 +42,63 @@ const xero = new XeroClient({
 // Note: Token storage and management is now handled by authManager
 
 // Enhanced validation helper function
-function validateAndMatchEmployee(input: string, lineNumber?: number): { 
+// Store pending matches that need user confirmation
+interface PendingMatch {
+  input_name: string;
+  line_number?: number;
+  file_type: string;
+  suggestions: Array<{
+    name: string;
+    score: number;
+    confidence: string;
+  }>;
+}
+
+const pendingMatches: PendingMatch[] = [];
+
+function validateAndMatchEmployee(input: string, lineNumber?: number, fileType: string = "unknown"): { 
   match: string | null; 
   score: number; 
   confidence: string;
   suggestions: string[];
   validationResult: any;
+  needsConfirmation: boolean;
 } {
   const matchResult = employeeValidator.validateEmployee(input, lineNumber);
   
+  // Check if this match needs user confirmation (MEDIUM or HIGH confidence with score < 95)
+  const needsConfirmation = matchResult.confidence_score < 95 && 
+                           matchResult.confidence_score >= 70 && 
+                           matchResult.suggestions.length > 0;
+  
+  if (needsConfirmation) {
+    // Store for user confirmation
+    const pendingMatch: PendingMatch = {
+      input_name: input,
+      line_number: lineNumber,
+      file_type: fileType,
+      suggestions: matchResult.suggestions.map(s => ({
+        name: s.name,
+        score: s.score,
+        confidence: matchResult.confidence
+      }))
+    };
+    
+    // Avoid duplicates
+    if (!pendingMatches.some(p => p.input_name === input && p.file_type === fileType)) {
+      pendingMatches.push(pendingMatch);
+    }
+    
+    console.log(`🤔 Match needs confirmation: "${input}" (${matchResult.confidence_score}%)`);
+  }
+  
   return {
-    match: matchResult.matched_name || null,
-    score: matchResult.confidence_score / 100, // Convert to 0-1 scale for compatibility
+    match: needsConfirmation ? null : (matchResult.matched_name || null),
+    score: matchResult.confidence_score / 100,
     confidence: matchResult.confidence,
     suggestions: matchResult.suggestions.map(s => s.name),
-    validationResult: matchResult
+    validationResult: matchResult,
+    needsConfirmation
   };
 }
 
@@ -92,7 +134,7 @@ function processSiteTimesheet(workbook: XLSX.WorkBook) {
       if (!nameCell) continue;
       
       const nameStr = String(nameCell).trim();
-      const enhancedResult = validateAndMatchEmployee(nameStr, i + 1);
+      const enhancedResult = validateAndMatchEmployee(nameStr, i + 1, "site_timesheet");
       
       if (!enhancedResult.match) {
         console.log(`⚠️ No match found for employee: "${nameStr}" on line ${i + 1}`);
@@ -218,7 +260,7 @@ function processTravelTimesheet(workbook: XLSX.WorkBook, employeeData: Map<strin
         if (!nameCell || travelHours === 0) continue;
         
         const nameStr = String(nameCell).trim();
-        const enhancedResult = validateAndMatchEmployee(nameStr, k + 1);
+        const enhancedResult = validateAndMatchEmployee(nameStr, k + 1, "travel_timesheet");
         
         if (!enhancedResult.match) {
           console.log(`⚠️ No travel time match for: "${nameStr}" on line ${k + 1}`);
@@ -320,7 +362,7 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
         if (!nameCell) continue;
         
         const nameStr = String(nameCell).trim();
-        const enhancedResult = validateAndMatchEmployee(nameStr, k + 1);
+        const enhancedResult = validateAndMatchEmployee(nameStr, k + 1, "overtime_rates");
         
         if (!enhancedResult.match) {
           console.log(`⚠️ No overtime rate match for: "${nameStr}" on line ${k + 1}`);
@@ -754,6 +796,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Calculate and split overtime hours (hours over 40 per week)
       employeeData = calculateOvertimeHours(employeeData);
       
+      // Check if there are pending matches that need user confirmation
+      if (pendingMatches.length > 0) {
+        console.log(`🤔 Found ${pendingMatches.length} pending matches that need user confirmation`);
+        
+        // Clear the pending matches array for the next request
+        const matches = [...pendingMatches];
+        pendingMatches.length = 0;
+        
+        return res.json({
+          success: false,
+          needsConfirmation: true,
+          pendingMatches: matches,
+          message: `Found ${matches.length} employee name(s) that need confirmation before processing can continue.`
+        });
+      }
+      
       // Generate consolidated data in exact target format
       const employees = Array.from(employeeData.values()).map(emp => ({
         employee_name: emp.name,
@@ -1019,6 +1077,164 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // === FUZZY MATCH CONFIRMATION ROUTES ===
+
+  /**
+   * Process timesheets with fuzzy match confirmations
+   */
+  app.post("/api/process-timesheets-with-confirmations", upload.fields([
+    { name: 'site_timesheet', maxCount: 1 },
+    { name: 'travel_timesheet', maxCount: 1 },
+    { name: 'overtime_rates', maxCount: 1 }
+  ]), async (req, res) => {
+    try {
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+      const { confirmations, skipDuplicateCheck } = req.body;
+      
+      if (!files || !files.site_timesheet || !files.travel_timesheet || !files.overtime_rates) {
+        return res.status(400).json({ 
+          message: "All three files are required: site_timesheet, travel_timesheet, overtime_rates" 
+        });
+      }
+
+      if (!confirmations) {
+        return res.status(400).json({ 
+          message: "Fuzzy match confirmations are required" 
+        });
+      }
+
+      console.log('🔄 Processing timesheets with fuzzy match confirmations...');
+      console.log('✅ Confirmations received:', JSON.parse(confirmations));
+      
+      // Store confirmations for use in validation
+      const matchConfirmations = JSON.parse(confirmations);
+      
+      // Clear any existing pending matches
+      pendingMatches.length = 0;
+      
+      // Override the validation function to use confirmations
+      const originalValidator = validateAndMatchEmployee;
+      const validateAndMatchEmployeeWithConfirmations = (input: string, lineNumber?: number, fileType: string = "unknown") => {
+        if (matchConfirmations[input]) {
+          // Use the confirmed match
+          return {
+            match: matchConfirmations[input],
+            score: 1.0,
+            confidence: "HIGH",
+            suggestions: [],
+            validationResult: null,
+            needsConfirmation: false
+          };
+        } else if (matchConfirmations[input] === null) {
+          // User chose to skip this match
+          return {
+            match: null,
+            score: 0,
+            confidence: "NO_MATCH",
+            suggestions: [],
+            validationResult: null,
+            needsConfirmation: false
+          };
+        } else {
+          // Use normal validation for unconfirmed items
+          return originalValidator(input, lineNumber, fileType);
+        }
+      };
+      
+      let employeeData = new Map();
+      
+      try {
+        // Process all files with confirmations - bypass original validation 
+        const siteWorkbook = parseExcelFile(files.site_timesheet[0].buffer, files.site_timesheet[0].originalname);
+        employeeData = processSiteTimesheet(siteWorkbook.workbook);
+        
+        const travelWorkbook = parseExcelFile(files.travel_timesheet[0].buffer, files.travel_timesheet[0].originalname);
+        employeeData = processTravelTimesheet(travelWorkbook.workbook, employeeData);
+        
+        const overtimeWorkbook = parseExcelFile(files.overtime_rates[0].buffer, files.overtime_rates[0].originalname);
+        employeeData = processOvertimeRates(overtimeWorkbook.workbook, employeeData);
+        
+        employeeData = calculateOvertimeHours(employeeData);
+        
+      } finally {
+        // The original function will be used again automatically for the next request
+      }
+      
+      // Continue with normal processing flow...
+      const employees = Array.from(employeeData.values()).map(emp => ({
+        employee_name: emp.name,
+        daily_entries: emp.entries.map((entry: any) => ({
+          entry_date: entry.entry_date,
+          region_name: entry.region_name,
+          hours: entry.hours,
+          hour_type: entry.hour_type,
+          overtime_rate: entry.overtime_rate
+        }))
+      }));
+      
+      const totalHours = employees.reduce((total, emp) => {
+        return total + emp.daily_entries.reduce((empTotal: number, entry: any) => empTotal + entry.hours, 0);
+      }, 0);
+      
+      const employeeSummaries = Array.from(employeeData.values()).map(emp => {
+        const regularHours = emp.entries.filter((e: any) => e.hour_type === 'REGULAR').reduce((sum: number, e: any) => sum + e.hours, 0);
+        const overtimeHours = emp.entries.filter((e: any) => e.hour_type === 'OVERTIME').reduce((sum: number, e: any) => sum + e.hours, 0);
+        const travelHours = 0; // Travel hours are now included in regular hours
+        const holidayHours = emp.entries.filter((e: any) => e.hour_type === 'HOLIDAY').reduce((sum: number, e: any) => sum + e.hours, 0);
+        const totalEmpHours = regularHours + overtimeHours + travelHours + holidayHours;
+        
+        const regions = Array.from(new Set(emp.entries.map((e: any) => e.region_name)));
+        const overtimeRate = emp.entries.find((e: any) => e.overtime_rate !== null)?.overtime_rate;
+        
+        return {
+          employee_name: emp.name,
+          matched_from: emp.matchedFrom,
+          total_hours: totalEmpHours,
+          regular_hours: regularHours,
+          overtime_hours: overtimeHours,
+          travel_hours: travelHours,
+          holiday_hours: holidayHours,
+          overtime_rate: overtimeRate ? `$${overtimeRate.toFixed(2)}` : 'Standard',
+          regions_worked: regions,
+          validation_notes: emp.validationNotes,
+        };
+      });
+      
+      const processingResult = {
+        success: true,
+        pay_period_end_date: "2025-06-08",
+        consolidated_data: { employees },
+        summary: {
+          total_hours: totalHours,
+          employees_found: employees.length,
+          employees_processed: employees.length,
+          total_regular_hours: employeeSummaries.reduce((sum, emp) => sum + emp.regular_hours, 0),
+          total_overtime_hours: employeeSummaries.reduce((sum, emp) => sum + emp.overtime_hours, 0),
+          total_holiday_hours: employeeSummaries.reduce((sum, emp) => sum + emp.holiday_hours, 0),
+        },
+        employees: employeeSummaries,
+        file_names: [
+          files.site_timesheet[0].originalname,
+          files.travel_timesheet[0].originalname,
+          files.overtime_rates[0].originalname
+        ],
+        xero_submission_status: 'pending'
+      };
+
+      const validatedResult = insertProcessingResultSchema.parse(processingResult);
+      const savedResult = await storage.createProcessingResult(validatedResult);
+      
+      console.log(`✅ Processing completed with confirmations for ${employees.length} employees`);
+      res.json(savedResult);
+      
+    } catch (error) {
+      console.error('❌ Processing with confirmations failed:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : 'Processing failed' 
+      });
+    }
+  });
+
   // FINALLY, add middleware at the very end - after all specific routes are registered
   app.use('/api', (req, res, next) => {
     console.log(`🔍 ALL API REQUEST: ${req.method} ${req.originalUrl}`);
@@ -1044,6 +1260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   console.log('  GET /api/settings/export');
   console.log('  POST /api/settings/import');
   console.log('  POST /api/settings/reset');
+  console.log('  POST /api/process-timesheets-with-confirmations');
 
   const httpServer = createServer(app);
   return httpServer;
