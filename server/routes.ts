@@ -119,6 +119,120 @@ function parseExcelFile(buffer: Buffer, filename: string) {
   }
 }
 
+// Process site timesheet with custom validator
+function processSiteTimesheetWithValidator(workbook: XLSX.WorkBook, validator: Function) {
+  const employeeData = new Map();
+  const regions = workbook.SheetNames;
+  
+  for (const regionName of regions) {
+    if (!VALID_REGIONS.includes(regionName)) {
+      continue; // Skip invalid region tabs
+    }
+    
+    const sheet = workbook.Sheets[regionName];
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    
+    // Process each row (skip headers)
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i] as any[];
+      if (!row || row.length === 0) continue;
+      
+      const nameCell = row[0];
+      if (!nameCell) continue;
+      
+      const nameStr = String(nameCell).trim();
+      const enhancedResult = validator(nameStr, i + 1, "site_timesheet");
+      
+      if (!enhancedResult.match) {
+        console.log(`⚠️ No match found for employee: "${nameStr}" on line ${i + 1}`);
+        if (enhancedResult.suggestions.length > 0) {
+          console.log(`💡 Suggestions: ${enhancedResult.suggestions.slice(0, 3).join(', ')}`);
+        }
+        continue;
+      }
+      
+      // Log match confidence for debugging
+      console.log(`✅ Employee match: "${nameStr}" → "${enhancedResult.match}" (${enhancedResult.confidence}, ${Math.round(enhancedResult.score * 100)}%)`);
+      
+      if (enhancedResult.confidence === 'LOW' || enhancedResult.confidence === 'MEDIUM') {
+        console.log(`⚠️ Low confidence match - may need verification`);
+      }
+      
+      const employeeName = enhancedResult.match;
+      if (!employeeData.has(employeeName)) {
+        employeeData.set(employeeName, {
+          name: employeeName,
+          matchedFrom: nameStr,
+          entries: [],
+          validationNotes: [`Successfully matched "${nameStr}" from timesheet.`],
+        });
+      }
+      
+      // Process daily entries (assuming columns 1-7 are days of the week)
+      const baseDate = new Date('2025-06-02'); // Monday of the week
+      
+      for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+        const cellValue = row[dayIndex + 1];
+        if (!cellValue) continue;
+        
+        const entryDate = new Date(baseDate);
+        entryDate.setDate(baseDate.getDate() + dayIndex);
+        
+        let hours = 0;
+        let hourType = "REGULAR";
+        
+        if (String(cellValue).toUpperCase() === 'HOL') {
+          // Check if this employee already has a holiday entry for this date
+          const existingHoliday = employeeData.get(employeeName).entries.find(
+            (entry: any) => 
+              entry.entry_date === entryDate.toISOString().split('T')[0] && 
+              entry.region_name === regionName && 
+              entry.hour_type === "HOLIDAY"
+          );
+          
+          if (!existingHoliday) {
+            hours = 8; // Standard holiday hours
+            hourType = "HOLIDAY";
+          } else {
+            continue; // Skip duplicate holiday entries
+          }
+        } else {
+          hours = parseFloat(String(cellValue));
+          if (isNaN(hours) || hours <= 0) continue;
+          hourType = "REGULAR";
+        }
+        
+        const dateString = entryDate.toISOString().split('T')[0];
+        
+        // Find existing entry or create new one
+        const employee = employeeData.get(employeeName);
+        const existingEntry = employee.entries.find(
+          (entry: any) => 
+            entry.entry_date === dateString && 
+            entry.region_name === regionName && 
+            entry.hour_type === hourType
+        );
+        
+        if (existingEntry) {
+          // Add to existing entry
+          existingEntry.hours += hours;
+        } else {
+          // Create new entry with total hours for this date/region/type
+          employee.entries.push({
+            entry_date: dateString,
+            region_name: regionName,
+            hours: hours,
+            hour_type: hourType,
+            overtime_rate: null,
+          });
+        }
+      }
+    }
+  }
+  
+  return employeeData;
+}
+
 // Process site timesheet (multi-tab)
 function processSiteTimesheet(workbook: XLSX.WorkBook) {
   const employeeData = new Map();
@@ -224,6 +338,116 @@ function processSiteTimesheet(workbook: XLSX.WorkBook) {
           });
         }
       }
+    }
+  }
+  
+  return employeeData;
+}
+
+// Process travel timesheet with custom validator
+function processTravelTimesheetWithValidator(workbook: XLSX.WorkBook, employeeData: Map<string, any>, validator: Function) {
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+  
+  // Look for headers to find the right columns
+  let nameColIndex = -1;
+  let dateColIndex = -1;
+  let hoursColIndex = -1;
+  let regionColIndex = -1;
+  
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i] as any[];
+    if (!row) continue;
+    
+    for (let j = 0; j < row.length; j++) {
+      const cell = String(row[j]).toLowerCase();
+      if (cell.includes('name') || cell.includes('employee')) nameColIndex = j;
+      if (cell.includes('date')) dateColIndex = j;
+      if (cell.includes('hours') || cell.includes('time')) hoursColIndex = j;
+      if (cell.includes('region') || cell.includes('location')) regionColIndex = j;
+    }
+    
+    if (nameColIndex !== -1 && hoursColIndex !== -1) {
+      console.log(`🚛 Found travel timesheet headers - processing ${data.length - i - 1} potential rows`);
+      // Process travel entries
+      for (let k = i + 1; k < data.length; k++) {
+        const travelRow = data[k] as any[];
+        if (!travelRow) continue;
+        
+        const nameCell = travelRow[nameColIndex];
+        const travelHours = parseFloat(String(travelRow[hoursColIndex])) || 0;
+        const travelDate = travelRow[dateColIndex];
+        const travelRegion = travelRow[regionColIndex] || "Eastside"; // Default region
+        
+        if (!nameCell || travelHours === 0) continue;
+        
+        const nameStr = String(nameCell).trim();
+        console.log(`🚛 Processing travel time for "${nameStr}": ${travelHours}h`);
+        const enhancedResult = validator(nameStr, k + 1, "travel_timesheet");
+        
+        if (!enhancedResult.match) {
+          console.log(`⚠️ No travel time match for: "${nameStr}" on line ${k + 1}`);
+          continue;
+        }
+        
+        console.log(`✅ Travel time match: "${nameStr}" → "${enhancedResult.match}" (${enhancedResult.confidence})`);
+        const employeeName = enhancedResult.match;
+        if (!employeeData.has(employeeName)) {
+          employeeData.set(employeeName, {
+            name: employeeName,
+            matchedFrom: nameStr,
+            entries: [],
+            validationNotes: [`Successfully matched "${nameStr}" from timesheet.`],
+          });
+        }
+        
+        // Parse travel date or use a default date
+        let entryDate = "2025-06-02"; // Default
+        if (travelDate) {
+          try {
+            const parsedDate = new Date(travelDate);
+            if (!isNaN(parsedDate.getTime())) {
+              entryDate = parsedDate.toISOString().split('T')[0];
+            }
+          } catch (e) {
+            // Use default date if parsing fails
+          }
+        }
+        
+        // Add travel hours to regular hours (not as separate category)
+        const employee = employeeData.get(employeeName);
+        const regionName = String(travelRegion).trim();
+        
+        // Look for existing regular hours entry for same date/region
+        const existingRegularEntry = employee.entries.find(
+          (entry: any) => 
+            entry.entry_date === entryDate && 
+            entry.region_name === regionName && 
+            entry.hour_type === "REGULAR"
+        );
+        
+        if (existingRegularEntry) {
+          // Add travel hours to existing regular hours
+          existingRegularEntry.hours += travelHours;
+          console.log(`📋 Added ${travelHours}h travel time to existing regular hours for ${employeeName} on ${entryDate}`);
+        } else {
+          // Create new regular hours entry with travel time
+          employee.entries.push({
+            entry_date: entryDate,
+            region_name: regionName,
+            hours: travelHours,
+            hour_type: "REGULAR",
+            overtime_rate: null,
+          });
+          console.log(`📋 Created new regular hours entry with ${travelHours}h travel time for ${employeeName} on ${entryDate}`);
+        }
+        
+        // Add note about travel time inclusion
+        if (!employee.validationNotes.some((note: string) => note.includes('travel time'))) {
+          employee.validationNotes.push(`Travel time hours included in regular hours totals.`);
+        }
+      }
+      break; // Found headers and processed data, exit the outer loop
     }
   }
   
@@ -339,6 +563,83 @@ function processTravelTimesheet(workbook: XLSX.WorkBook, employeeData: Map<strin
 }
 
 // Process overtime rates
+// Process overtime rates with custom validator
+function processOvertimeRatesWithValidator(workbook: XLSX.WorkBook, employeeData: Map<string, any>, validator: Function) {
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+  
+  // Find header row and column indices - look for employee name and rate columns
+  let nameColIndex = -1;
+  let rateColIndex = -1;
+  
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i] as any[];
+    if (!row) continue;
+    
+    for (let j = 0; j < row.length; j++) {
+      const cell = String(row[j]).toLowerCase();
+      if (cell.includes('name') || cell.includes('employee')) nameColIndex = j;
+      if (cell.includes('rate') || cell.includes('overtime')) rateColIndex = j;
+    }
+    
+    if (nameColIndex !== -1 && rateColIndex !== -1) {
+      console.log(`💰 Found overtime rates headers - processing ${data.length - i - 1} potential rows`);
+      // Process remaining rows  
+      for (let k = i + 1; k < data.length; k++) {
+        const empRow = data[k] as any[];
+        if (!empRow) continue;
+        
+        const nameCell = empRow[nameColIndex];
+        const rateValue = empRow[rateColIndex];
+        
+        if (!nameCell) continue;
+        
+        const nameStr = String(nameCell).trim();
+        console.log(`💰 Processing overtime rate for "${nameStr}"`);
+        const enhancedResult = validator(nameStr, k + 1, "overtime_rates");
+        
+        if (!enhancedResult.match) {
+          console.log(`⚠️ No overtime rate match for: "${nameStr}" on line ${k + 1}`);
+          continue;
+        }
+        
+        console.log(`✅ Overtime rate match: "${nameStr}" → "${enhancedResult.match}" (${enhancedResult.confidence})`);
+        const employeeName = enhancedResult.match;
+        
+        // Parse the rate - handle both number and string formats
+        let overtimeRate = null;
+        if (rateValue !== undefined && rateValue !== null && rateValue !== '') {
+          const rateStr = String(rateValue).replace(/[^0-9.]/g, ''); // Remove currency symbols
+          const parsedRate = parseFloat(rateStr);
+          if (!isNaN(parsedRate) && parsedRate > 0) {
+            overtimeRate = parsedRate;
+          }
+        }
+        
+        if (employeeData.has(employeeName)) {
+          const employee = employeeData.get(employeeName);
+          
+          // Apply overtime rate to all entries for this employee
+          employee.entries.forEach((entry: any) => {
+            entry.overtime_rate = overtimeRate;
+          });
+          
+          if (overtimeRate) {
+            employee.validationNotes.push(`Overtime rate applied: $${overtimeRate.toFixed(2)}.`);
+            console.log(`💰 Applied overtime rate $${overtimeRate.toFixed(2)} to ${employeeName}`);
+          } else {
+            employee.validationNotes.push("Overtime rate applied: Standard.");
+            console.log(`💰 Applied standard overtime rate to ${employeeName}`);
+          }
+        }
+      }
+      break;
+    }
+  }
+  
+  return employeeData;
+}
+
 function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string, any>) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
@@ -1165,20 +1466,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let employeeData = new Map();
       
       try {
-        // Process all files with confirmations - bypass original validation 
+        // Process all files with confirmations
         const siteWorkbook = parseExcelFile(files.site_timesheet[0].buffer, files.site_timesheet[0].originalname);
-        employeeData = processSiteTimesheet(siteWorkbook.workbook);
+        employeeData = processSiteTimesheetWithValidator(siteWorkbook.workbook, validateAndMatchEmployeeWithConfirmations);
         
         const travelWorkbook = parseExcelFile(files.travel_timesheet[0].buffer, files.travel_timesheet[0].originalname);
-        employeeData = processTravelTimesheet(travelWorkbook.workbook, employeeData);
+        employeeData = processTravelTimesheetWithValidator(travelWorkbook.workbook, employeeData, validateAndMatchEmployeeWithConfirmations);
         
         const overtimeWorkbook = parseExcelFile(files.overtime_rates[0].buffer, files.overtime_rates[0].originalname);
-        employeeData = processOvertimeRates(overtimeWorkbook.workbook, employeeData);
+        employeeData = processOvertimeRatesWithValidator(overtimeWorkbook.workbook, employeeData, validateAndMatchEmployeeWithConfirmations);
         
         employeeData = calculateOvertimeHours(employeeData);
         
       } finally {
-        // The original function will be used again automatically for the next request
+        // Processing complete
       }
       
       // Continue with normal processing flow...
