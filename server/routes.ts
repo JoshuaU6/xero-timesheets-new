@@ -656,6 +656,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ 
           connected: false, 
           error: authStatus.error,
+          known_employees: KNOWN_EMPLOYEES,
+          valid_regions: VALID_REGIONS,
           needs_reauth: true 
         });
       }
@@ -674,6 +676,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         connected: true,
         organization_name: authStatus.organization_name,
         tenant_id: authStatus.tenant_id,
+        known_employees: KNOWN_EMPLOYEES,
+        valid_regions: VALID_REGIONS,
         expires_in: expiresIn,
         enhanced_security: true
       });
@@ -683,6 +687,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ 
         connected: false, 
         error: error instanceof Error ? error.message : 'Unknown error',
+        known_employees: KNOWN_EMPLOYEES,
+        valid_regions: VALID_REGIONS,
         enhanced_security: true 
       });
     }

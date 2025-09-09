@@ -7,6 +7,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { FileUpload } from "@/components/file-upload";
 import { ProcessingResults } from "@/components/processing-results";
 import { FuzzyMatchConfirmation } from "@/components/fuzzy-match-confirmation";
+import { ValidationSettings } from "@/components/validation-settings";
 import { ProcessingResult } from "@shared/schema";
 import { Moon, Sun, FlaskConical } from "lucide-react";
 
@@ -254,22 +255,7 @@ export default function Home() {
 
               <div className="pt-6 border-t border-border">
                 <h4 className="font-medium text-foreground mb-3">Validation Settings</h4>
-                <div className="space-y-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Known Employees</span>
-                    <span className="text-foreground font-medium">3 employees</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Valid Regions</span>
-                    <span className="text-foreground font-medium">Eastside, South, North</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Fuzzy Matching</span>
-                    <span className="text-green-600 font-medium">
-                      <i className="fas fa-check mr-1"></i>Enabled
-                    </span>
-                  </div>
-                </div>
+                <ValidationSettings />
               </div>
             </CardContent>
           </Card>
