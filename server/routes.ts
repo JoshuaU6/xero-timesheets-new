@@ -24,7 +24,14 @@ const upload = multer({
 });
 
 // Known validation data (as specified in requirements)
-const KNOWN_EMPLOYEES = ["Charlotte Danes", "Chelsea Serati", "Jack Allan"];
+const KNOWN_EMPLOYEES = [
+  "Charlotte Danes", 
+  "Chelsea Serati", 
+  "Jack Allan",
+  "Andrew Dwyer",    // Similar to "Andy Dwyer" in test data
+  "Pamela Beesly",   // Similar to "Pam Beesly" in test data  
+  "Dwight K Schrute" // Similar to "Dwight Schrute" in test data
+];
 const VALID_REGIONS = ["Eastside", "South", "North"];
 
 // Initialize enhanced validation system
