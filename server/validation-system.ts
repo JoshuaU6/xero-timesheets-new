@@ -9,6 +9,8 @@
  * - Enhanced employee matching
  */
 
+import { getValidationThresholds, getEnabledAlgorithms } from "./settings-manager";
+
 export enum ValidationStatus {
   SUCCESS = "SUCCESS",
   FAILED = "FAILED", 
@@ -185,10 +187,13 @@ export class EnhancedFuzzyMatcher {
   private config: FuzzyMatchConfig;
 
   constructor(config: Partial<FuzzyMatchConfig> = {}) {
+    // Get dynamic thresholds from settings manager
+    const thresholds = getValidationThresholds();
+    
     this.config = {
-      threshold: 85,        // 85% minimum for automatic matching
-      cutoff: 60,          // 60% minimum for suggestions
-      max_suggestions: 5,  // Up to 5 suggestions
+      threshold: thresholds.high,        // Dynamic threshold for automatic matching
+      cutoff: thresholds.low,           // Dynamic threshold for suggestions
+      max_suggestions: 5,               // Keep configurable max suggestions
       ...config
     };
   }
@@ -234,18 +239,21 @@ export class EnhancedFuzzyMatcher {
       const bestMatch = scores[0];
       result.confidence_score = bestMatch.score;
       
+      // Get dynamic thresholds
+      const thresholds = getValidationThresholds();
+      
       if (bestMatch.score >= 95) {
         result.confidence = MatchConfidence.HIGH;
         result.matched_name = bestMatch.name;
         result.requires_confirmation = false;
-      } else if (bestMatch.score >= this.config.threshold) {
+      } else if (bestMatch.score >= thresholds.high) {
         result.confidence = MatchConfidence.HIGH;
         result.matched_name = bestMatch.name;
         result.requires_confirmation = true;
-      } else if (bestMatch.score >= 70) {
+      } else if (bestMatch.score >= thresholds.medium) {
         result.confidence = MatchConfidence.MEDIUM;
         result.matched_name = bestMatch.name;
-      } else if (bestMatch.score >= this.config.cutoff) {
+      } else if (bestMatch.score >= thresholds.low) {
         result.confidence = MatchConfidence.LOW;
       }
     }
@@ -254,23 +262,36 @@ export class EnhancedFuzzyMatcher {
   }
 
   /**
-   * Calculate similarity using multiple algorithms
+   * Calculate similarity using multiple algorithms based on enabled settings
    */
   private calculateSimilarity(str1: string, str2: string): number {
     // Exact match
     if (str1 === str2) return 100;
 
-    // Calculate multiple similarity scores
-    const levenshteinScore = this.levenshteinSimilarity(str1, str2);
-    const jaccardScore = this.jaccardSimilarity(str1, str2);
-    const wordSimilarityScore = this.wordSimilarity(str1, str2);
+    // Get enabled algorithms from settings
+    const enabledAlgorithms = getEnabledAlgorithms();
     
-    // Weighted combination of scores
-    const combined = (
-      levenshteinScore * 0.4 +
-      jaccardScore * 0.3 +
-      wordSimilarityScore * 0.3
-    );
+    let totalScore = 0;
+    let totalWeight = 0;
+
+    // Calculate scores for enabled algorithms only
+    if (enabledAlgorithms.levenshtein) {
+      totalScore += this.levenshteinSimilarity(str1, str2) * 0.4;
+      totalWeight += 0.4;
+    }
+    
+    if (enabledAlgorithms.jaccard) {
+      totalScore += this.jaccardSimilarity(str1, str2) * 0.3;
+      totalWeight += 0.3;
+    }
+    
+    if (enabledAlgorithms.wordLevel) {
+      totalScore += this.wordSimilarity(str1, str2) * 0.3;
+      totalWeight += 0.3;
+    }
+
+    // Normalize by total weight to ensure consistent scoring
+    const combined = totalWeight > 0 ? totalScore / totalWeight : 0;
 
     return Math.round(combined * 100) / 100;
   }

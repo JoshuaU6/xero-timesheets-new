@@ -13,6 +13,7 @@ import {
   ValidationStatus,
   EnhancedFuzzyMatcher 
 } from "./validation-system";
+import { settingsManager, SettingsSchema } from "./settings-manager";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -762,6 +763,146 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // === SETTINGS MANAGEMENT ROUTES ===
+
+  /**
+   * Get current application settings
+   */
+  app.get("/api/settings", (req, res) => {
+    try {
+      const settings = settingsManager.getSettings();
+      res.json({ 
+        success: true, 
+        settings,
+        message: "Settings retrieved successfully"
+      });
+    } catch (error) {
+      console.error("Failed to get settings:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to retrieve settings" 
+      });
+    }
+  });
+
+  /**
+   * Update application settings
+   */
+  app.patch("/api/settings", (req, res) => {
+    try {
+      const updateData = req.body;
+      
+      // Validate the partial settings update
+      const partialValidation = SettingsSchema.deepPartial().safeParse(updateData);
+      if (!partialValidation.success) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid settings format",
+          details: partialValidation.error.errors
+        });
+      }
+
+      const updated = settingsManager.updateSettings(updateData);
+      if (!updated) {
+        return res.status(400).json({
+          success: false,
+          error: "Failed to update settings - validation failed"
+        });
+      }
+
+      console.log("📋 Settings updated successfully");
+      res.json({ 
+        success: true, 
+        settings: settingsManager.getSettings(),
+        message: "Settings updated successfully"
+      });
+    } catch (error) {
+      console.error("Failed to update settings:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to update settings" 
+      });
+    }
+  });
+
+  /**
+   * Export settings as JSON
+   */
+  app.get("/api/settings/export", (req, res) => {
+    try {
+      const settingsJson = settingsManager.exportSettings();
+      
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', 'attachment; filename="timesheet-settings.json"');
+      res.send(settingsJson);
+    } catch (error) {
+      console.error("Failed to export settings:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to export settings" 
+      });
+    }
+  });
+
+  /**
+   * Import settings from JSON
+   */
+  app.post("/api/settings/import", (req, res) => {
+    try {
+      const { settingsJson } = req.body;
+      
+      if (!settingsJson || typeof settingsJson !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: "Settings JSON string is required"
+        });
+      }
+
+      const imported = settingsManager.importSettings(settingsJson);
+      if (!imported) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid settings format or failed validation"
+        });
+      }
+
+      console.log("📋 Settings imported successfully");
+      res.json({ 
+        success: true, 
+        settings: settingsManager.getSettings(),
+        message: "Settings imported successfully"
+      });
+    } catch (error) {
+      console.error("Failed to import settings:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to import settings" 
+      });
+    }
+  });
+
+  /**
+   * Reset settings to defaults
+   */
+  app.post("/api/settings/reset", (req, res) => {
+    try {
+      settingsManager.resetSettings();
+      
+      console.log("📋 Settings reset to defaults");
+      res.json({ 
+        success: true, 
+        settings: settingsManager.getSettings(),
+        message: "Settings reset to defaults successfully"
+      });
+    } catch (error) {
+      console.error("Failed to reset settings:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to reset settings" 
+      });
+    }
+  });
+
   // FINALLY, add middleware at the very end - after all specific routes are registered
   app.use('/api', (req, res, next) => {
     console.log(`🔍 ALL API REQUEST: ${req.method} ${req.originalUrl}`);
@@ -782,6 +923,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   console.log('  POST /api/process-timesheets');
   console.log('  GET /api/processing-results/:id');
   console.log('  GET /api/processing-results');
+  console.log('  GET /api/settings');
+  console.log('  PATCH /api/settings');
+  console.log('  GET /api/settings/export');
+  console.log('  POST /api/settings/import');
+  console.log('  POST /api/settings/reset');
 
   const httpServer = createServer(app);
   return httpServer;
