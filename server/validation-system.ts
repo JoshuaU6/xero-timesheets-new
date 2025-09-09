@@ -288,17 +288,20 @@ export class EnhancedFuzzyMatcher {
 
     // Calculate scores for enabled algorithms only
     if (enabledAlgorithms.levenshtein) {
-      totalScore += this.levenshteinSimilarity(str1, str2) * 0.4;
+      const levScore = this.levenshteinSimilarity(str1, str2) * 100; // Convert to percentage
+      totalScore += levScore * 0.4;
       totalWeight += 0.4;
     }
     
     if (enabledAlgorithms.jaccard) {
-      totalScore += this.jaccardSimilarity(str1, str2) * 0.3;
+      const jaccardScore = this.jaccardSimilarity(str1, str2) * 100; // Convert to percentage
+      totalScore += jaccardScore * 0.3;
       totalWeight += 0.3;
     }
     
     if (enabledAlgorithms.wordLevel) {
-      totalScore += this.wordSimilarity(str1, str2) * 0.3;
+      const wordScore = this.wordSimilarity(str1, str2) * 100; // Convert to percentage
+      totalScore += wordScore * 0.3;
       totalWeight += 0.3;
     }
 
