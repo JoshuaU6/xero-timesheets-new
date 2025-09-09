@@ -109,6 +109,7 @@ export class DatabaseStorage implements IStorage {
     return {
       ...submission,
       processing_result_id: submission.processing_result_id || null,
+      xero_submission_status: submission.xero_submission_status || "pending",
       created_at: submission.created_at.toISOString(),
       updated_at: submission.updated_at.toISOString(),
     };
@@ -125,6 +126,7 @@ export class DatabaseStorage implements IStorage {
     return {
       ...submission,
       processing_result_id: submission.processing_result_id || null,
+      xero_submission_status: submission.xero_submission_status || "pending",
       created_at: submission.created_at.toISOString(),
       updated_at: submission.updated_at.toISOString(),
     };
