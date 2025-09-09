@@ -213,11 +213,15 @@ export class EnhancedFuzzyMatcher {
     }
 
     const normalizedInput = this.normalizeString(input);
+    console.log(`🔍 Fuzzy matching: "${input}" (normalized: "${normalizedInput}") against ${candidates.length} candidates`);
+    console.log(`⚙️ Current config - cutoff: ${this.config.cutoff}, threshold: ${this.config.threshold}`);
+    
     const scores: Array<{ name: string; score: number }> = [];
 
     for (const candidate of candidates) {
       const normalizedCandidate = this.normalizeString(candidate);
       const score = this.calculateSimilarity(normalizedInput, normalizedCandidate);
+      console.log(`🔍 Similarity "${input}" vs "${candidate}": ${score.toFixed(2)}% (cutoff: ${this.config.cutoff})`);
       
       if (score >= this.config.cutoff) {
         scores.push({ name: candidate, score });
@@ -226,6 +230,7 @@ export class EnhancedFuzzyMatcher {
 
     // Sort by score descending
     scores.sort((a, b) => b.score - a.score);
+    console.log(`🎯 Found ${scores.length} fuzzy matches for "${input}":`, scores.map(m => `${m.name} (${m.score.toFixed(2)}%)`));
 
     const result: MatchResult = {
       input_name: input,
@@ -241,21 +246,28 @@ export class EnhancedFuzzyMatcher {
       
       // Get dynamic thresholds
       const thresholds = getValidationThresholds();
+      console.log(`📊 Thresholds - high: ${thresholds.high}, medium: ${thresholds.medium}, low: ${thresholds.low}`);
       
       if (bestMatch.score >= 95) {
         result.confidence = MatchConfidence.HIGH;
         result.matched_name = bestMatch.name;
         result.requires_confirmation = false;
+        console.log(`✅ AUTO-MATCH: "${input}" → "${bestMatch.name}" (${bestMatch.score.toFixed(2)}%)`);
       } else if (bestMatch.score >= thresholds.high) {
         result.confidence = MatchConfidence.HIGH;
         result.matched_name = bestMatch.name;
         result.requires_confirmation = true;
+        console.log(`🤔 HIGH CONFIDENCE NEEDS CONFIRMATION: "${input}" → "${bestMatch.name}" (${bestMatch.score.toFixed(2)}%)`);
       } else if (bestMatch.score >= thresholds.medium) {
         result.confidence = MatchConfidence.MEDIUM;
         result.matched_name = bestMatch.name;
+        console.log(`⚠️ MEDIUM CONFIDENCE: "${input}" → "${bestMatch.name}" (${bestMatch.score.toFixed(2)}%)`);
       } else if (bestMatch.score >= thresholds.low) {
         result.confidence = MatchConfidence.LOW;
+        console.log(`⚠️ LOW CONFIDENCE: "${input}" → "${bestMatch.name}" (${bestMatch.score.toFixed(2)}%)`);
       }
+    } else {
+      console.log(`❌ No fuzzy matches found for "${input}" above cutoff ${this.config.cutoff}%`);
     }
 
     return result;
