@@ -249,14 +249,38 @@ function processTravelTimesheet(workbook: XLSX.WorkBook, employeeData: Map<strin
           }
         }
         
-        // Add travel entry
-        employeeData.get(employeeName).entries.push({
-          entry_date: entryDate,
-          region_name: String(travelRegion).trim(),
-          hours: travelHours,
-          hour_type: "TRAVEL",
-          overtime_rate: null,
-        });
+        // Add travel hours to regular hours (not as separate category)
+        const employee = employeeData.get(employeeName);
+        const regionName = String(travelRegion).trim();
+        
+        // Look for existing regular hours entry for same date/region
+        const existingRegularEntry = employee.entries.find(
+          (entry: any) => 
+            entry.entry_date === entryDate && 
+            entry.region_name === regionName && 
+            entry.hour_type === "REGULAR"
+        );
+        
+        if (existingRegularEntry) {
+          // Add travel hours to existing regular hours
+          existingRegularEntry.hours += travelHours;
+          console.log(`📋 Added ${travelHours}h travel time to existing regular hours for ${employeeName} on ${entryDate}`);
+        } else {
+          // Create new regular hours entry with travel time
+          employee.entries.push({
+            entry_date: entryDate,
+            region_name: regionName,
+            hours: travelHours,
+            hour_type: "REGULAR",
+            overtime_rate: null,
+          });
+          console.log(`📋 Created new regular hours entry with ${travelHours}h travel time for ${employeeName} on ${entryDate}`);
+        }
+        
+        // Add note about travel time inclusion
+        if (!employee.validationNotes.some((note: string) => note.includes('travel time'))) {
+          employee.validationNotes.push(`Travel time hours included in regular hours totals.`);
+        }
       }
       break;
     }

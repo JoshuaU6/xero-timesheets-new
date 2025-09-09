@@ -1,0 +1,395 @@
+1
+00:00:00,011 --> 00:00:02,250
+Hey, Joshua.
+
+2
+00:00:02,401 --> 00:00:05,413
+Thank you so much for the update and for making the progress on this.
+
+3
+00:00:05,414 --> 00:00:07,760
+It's looking awesome. Really, really glad, ah,
+
+4
+00:00:07,761 --> 00:00:10,293
+to see you making such good progress on it. Uhm,
+
+5
+00:00:10,304 --> 00:00:12,852
+so just a couple things from my side in response to your loom.
+
+6
+00:00:13,046 --> 00:00:16,415
+Just to kinda help, ah, guide things a little bit if this is helpful.
+
+7
+00:00:16,662 --> 00:00:19,231
+I'm not sure which bits you're already in the process of.
+
+8
+00:00:19,478 --> 00:00:21,589
+So I'll just share a couple of thoughts here, but you, I,
+
+9
+00:00:21,590 --> 00:00:24,256
+I'm pretty sure you already have this in mind. So sorry if this is
+
+10
+00:00:24,257 --> 00:00:26,411
+just repeating things you already know. Uhm,
+
+11
+00:00:26,421 --> 00:00:28,501
+and no need to come back on this video specifically,
+
+12
+00:00:28,502 --> 00:00:30,805
+ah, with any, I don't want to distract you from building,
+
+13
+00:00:30,806 --> 00:00:33,002
+basically. But a couple of things.
+
+14
+00:00:33,078 --> 00:00:35,563
+So in the demo videos, I noticed that,
+
+15
+00:00:35,564 --> 00:00:38,112
+yes, it seems to be working perfectly with this,
+
+16
+00:00:38,113 --> 00:00:41,163
+which is great. It's pulling the hours from multiple shifts. Uhm,
+
+17
+00:00:41,173 --> 00:00:44,579
+which is amazing. Ah, now one thing it's not doing yet.
+
+18
+00:00:44,904 --> 00:00:46,837
+Ah, as far as I can tell, as I say, you might have already
+
+19
+00:00:46,838 --> 00:00:49,520
+included this and I might just not have visibility on it.
+
+20
+00:00:49,521 --> 00:00:53,741
+Ah, is that it's not currently pulling out the hours for the time.
+
+21
+00:00:54,088 --> 00:00:56,165
+For the, ah, travel time. So for instance,
+
+22
+00:00:56,166 --> 00:00:58,683
+if you have a look in here, we've got the travel time sheet.
+
+23
+00:00:58,684 --> 00:01:02,112
+Ah, so travel time should be treated as regular hours and add it to
+
+24
+00:01:02,113 --> 00:01:06,368
+the employee's daily totals. So if an employee has five hours of travel time,
+
+25
+00:01:06,369 --> 00:01:08,387
+they should have one extra hour each, each day.
+
+26
+00:01:08,690 --> 00:01:13,440
+So, ah, ah, and now demonstrated in here so you've got Charlotte Danes 42
+
+27
+00:01:13,441 --> 00:01:16,853
+and a half hours over time and actually you don't have a good example
+
+28
+00:01:16,854 --> 00:01:19,914
+because it doesn't show the travel but there should be there your eight hours
+
+29
+00:01:19,915 --> 00:01:22,026
+travel. So, um,
+
+30
+00:01:22,037 --> 00:01:24,170
+basically, so to use that as an example,
+
+31
+00:01:24,171 --> 00:01:28,352
+so we've got Charlotte Danes and we pulled her hours through and then in
+
+32
+00:01:28,353 --> 00:01:30,658
+the travel time, we've got Charlotte Danes here.
+
+33
+00:01:30,909 --> 00:01:34,370
+We've got hours per day of travel, ah, one hours to be paid five.
+
+34
+00:01:34,589 --> 00:01:37,413
+So what we need to do is make sure that when her total is
+
+35
+00:01:37,414 --> 00:01:41,184
+being pushed into zero, that should be pushed in his regular hours.
+
+36
+00:01:41,185 --> 00:01:44,522
+So essentially, in the, um,
+
+37
+00:01:44,533 --> 00:01:48,250
+JSON, you should have, you know, the regular hours and then you should also
+
+38
+00:01:48,251 --> 00:01:53,203
+have the, It's
+
+39
+00:01:53,204 --> 00:01:55,288
+not actually in here. Maybe that's part of the problem.
+
+40
+00:01:55,453 --> 00:01:59,477
+Sorry about that. Yeah, basically you should also have the travel time included as
+
+41
+00:01:59,478 --> 00:02:03,568
+well. Hopefully that makes sense. I appreciate this is not super clear,
+
+42
+00:02:03,569 --> 00:02:05,941
+so maybe that's why it wasn't obvious to include that.
+
+43
+00:02:05,942 --> 00:02:10,263
+Um, and that's why this is an iterative process working back and forth together.
+
+44
+00:02:10,558 --> 00:02:12,737
+So, ah, yeah, sorry for that. That wasn't clear.
+
+45
+00:02:12,809 --> 00:02:15,873
+Oh, there we go. Actually, sorry it isn't here. So, read in time,
+
+46
+00:02:16,158 --> 00:02:18,679
+ah, south hours to hours type travel.
+
+47
+00:02:19,006 --> 00:02:22,202
+So actually, this doesn't actually need to be a separate hour type.
+
+48
+00:02:22,203 --> 00:02:24,837
+It can just be regular hours. You don't need to have a separate category
+
+49
+00:02:24,838 --> 00:02:27,813
+for it. But the important thing is that it is accommodated for at some
+
+50
+00:02:27,814 --> 00:02:31,607
+point. So in the passing, you can see the travel time there and then
+
+51
+00:02:31,817 --> 00:02:36,000
+the other thing is the overtime rate which I think you've already tackled a
+
+52
+00:02:36,001 --> 00:02:40,096
+little bit but obviously when there's a regular hour rate then sometimes there's a
+
+53
+00:02:40,097 --> 00:02:42,960
+over time rate. So when it comes to overtime,
+
+54
+00:02:42,961 --> 00:02:45,269
+that should be its own category which, um,
+
+55
+00:02:45,280 --> 00:02:48,458
+actually I can't actually let me pause. Okay,
+
+56
+00:02:48,459 --> 00:02:51,285
+so as you can see in here, when a time sheet is being created
+
+57
+00:02:51,286 --> 00:02:53,662
+in this example, you've got overtime and regular hours.
+
+58
+00:02:53,964 --> 00:02:57,088
+So the travel time and the regular hours time should go in the regular
+
+59
+00:02:57,089 --> 00:03:00,176
+hours category and then there should be in another line which has the overtime
+
+60
+00:03:00,177 --> 00:03:02,665
+hours. And so the overtime should just be added to,
+
+61
+00:03:03,553 --> 00:03:08,074
+ah, ah, the, hmm.
+
+62
+00:03:08,085 --> 00:03:10,309
+Okay, I had to pause there because I realized this gets a little bit
+
+63
+00:03:10,310 --> 00:03:13,162
+more complicated. So in this example,
+
+64
+00:03:13,163 --> 00:03:15,838
+you've got 44 hours.
+
+65
+00:03:16,428 --> 00:03:20,112
+That means standard hours is 40 and then four hours is over time.
+
+66
+00:03:20,113 --> 00:03:23,419
+In this example, what you do is you calculate how many hours you've got
+
+67
+00:03:23,653 --> 00:03:27,024
+and then you have four of those hours going into overtime and the other
+
+68
+00:03:27,025 --> 00:03:30,410
+40 hours going into the regular. So what that might break down as is
+
+69
+00:03:30,411 --> 00:03:32,912
+like 9999 and then on this one,
+
+70
+00:03:32,943 --> 00:03:36,042
+maybe you put four in there and then you put the overtime as four
+
+71
+00:03:36,043 --> 00:03:39,616
+in for that day as well. That's probably the easiest way to tackle that.
+
+72
+00:03:39,617 --> 00:03:42,352
+Um, but I'm open to, to flexibility on that.
+
+73
+00:03:42,458 --> 00:03:45,317
+I'm, I'm quite relaxed about how that's approached. The main thing is just to
+
+74
+00:03:45,318 --> 00:03:48,277
+make sure that we've got regular hours accounted for and we've got overtime hours
+
+75
+00:03:48,278 --> 00:03:50,592
+accounted for. Cool, I mean, just pause there,
+
+76
+00:03:50,593 --> 00:03:52,736
+see if there's anything else. So yeah,
+
+77
+00:03:52,737 --> 00:03:56,453
+just to clarify, as it says here, if their hourly rate is the same,
+
+78
+00:03:56,676 --> 00:03:58,778
+then the overtime just gets paid at the standard rate,
+
+79
+00:03:58,779 --> 00:04:01,941
+so you don't have to worry about doing, The separate hours is overtime hours.
+
+80
+00:04:01,942 --> 00:04:06,751
+Umm, cool. So, I'm mindful that as I'm trying to explain
+
+81
+00:04:06,752 --> 00:04:09,050
+this, it's actually getting more complicated than I thought it was.
+
+82
+00:04:09,339 --> 00:04:13,173
+So, if that's not clear, then we can obviously jump on a call and
+
+83
+00:04:13,174 --> 00:04:15,919
+talk it through, because I appreciate there is some nuance in here.
+
+84
+00:04:16,123 --> 00:04:18,415
+But generally speaking, my approach with this is like,
+
+85
+00:04:18,693 --> 00:04:21,349
+I'm very happy for you to just take a stab at it, because all
+
+86
+00:04:21,350 --> 00:04:23,684
+of this time you're spending on it, you're learning how it all works,
+
+87
+00:04:24,005 --> 00:04:26,821
+and then ultimately we're going to need to integrate it with Gavin's data anyway.
+
+88
+00:04:26,822 --> 00:04:29,263
+So, I'm really happy with you just making assumptions.
+
+89
+00:04:29,445 --> 00:04:32,576
+The more, uh, uh, time we can take off my plate the better because
+
+90
+00:04:32,577 --> 00:04:35,237
+it means the more time I can go out and try and win more
+
+91
+00:04:35,238 --> 00:04:38,159
+business and therefore give you more work to do by winning more business.
+
+92
+00:04:38,544 --> 00:04:41,045
+So I'm really happy for you to make a assumption. Um,
+
+93
+00:04:41,055 --> 00:04:43,215
+wherever it makes sense to do so. Cool.
+
+94
+00:04:43,216 --> 00:04:46,415
+So, and the only other thing was, right,
+
+95
+00:04:46,416 --> 00:04:49,215
+we only got 15 seconds left. So, on the fuzzy matching,
+
+96
+00:04:49,216 --> 00:04:53,235
+um, basically what we would want is some sort of UX in that loop.
+
+97
+00:04:53,494 --> 00:04:57,075
+So that, let's say there's one that's got like 92% on Charlotte Danes,
+
+98
+00:04:57,270 --> 00:05:00,346
+and it's got like, uh, Dines, and so then you'd want to be able
+
+99
+00:05:00,347 --> 00:05:02,762
+to have the option to choose that within a, uh,
