@@ -1117,10 +1117,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       console.log('🔄 Processing timesheets with fuzzy match confirmations...');
-      console.log('✅ Confirmations received:', JSON.parse(confirmations));
       
       // Store confirmations for use in validation
-      const matchConfirmations = JSON.parse(confirmations);
+      let matchConfirmations;
+      try {
+        matchConfirmations = JSON.parse(confirmations);
+        console.log('✅ Confirmations received:', Object.keys(matchConfirmations).length, 'confirmations');
+      } catch (error) {
+        console.error('❌ Failed to parse confirmations JSON:', error);
+        return res.status(400).json({ 
+          message: "Invalid confirmations format - must be valid JSON" 
+        });
+      }
       
       // Clear any existing pending matches
       pendingMatches.length = 0;
