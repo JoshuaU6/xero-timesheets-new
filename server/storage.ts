@@ -1,6 +1,8 @@
-import { type ProcessingResult, type InsertProcessingResult, type Submission, type InsertSubmission } from "@shared/schema";
+import { type ProcessingResult, type InsertProcessingResult, type Submission, type InsertSubmission, processingResultTable, submissionTable } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { createHash } from "crypto";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 export interface IStorage {
   createProcessingResult(result: InsertProcessingResult): Promise<ProcessingResult>;
@@ -88,4 +90,109 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// DatabaseStorage implementation
+export class DatabaseStorage implements IStorage {
+  generateFileHash(files: Record<string, Buffer>): string {
+    const combinedContent = Object.entries(files)
+      .sort(([a], [b]) => a.localeCompare(b)) // Sort by filename for consistency
+      .map(([filename, buffer]) => `${filename}:${buffer.toString('base64')}`)
+      .join('|');
+    
+    return createHash('sha256').update(combinedContent).digest('hex');
+  }
+
+  async createSubmission(insertSubmission: InsertSubmission): Promise<Submission> {
+    const [submission] = await db
+      .insert(submissionTable)
+      .values(insertSubmission)
+      .returning();
+    return {
+      ...submission,
+      processing_result_id: submission.processing_result_id || null,
+      created_at: submission.created_at.toISOString(),
+      updated_at: submission.updated_at.toISOString(),
+    };
+  }
+
+  async getSubmissionByHash(fileHash: string): Promise<Submission | undefined> {
+    const [submission] = await db
+      .select()
+      .from(submissionTable)
+      .where(eq(submissionTable.file_hash, fileHash));
+    
+    if (!submission) return undefined;
+    
+    return {
+      ...submission,
+      processing_result_id: submission.processing_result_id || null,
+      created_at: submission.created_at.toISOString(),
+      updated_at: submission.updated_at.toISOString(),
+    };
+  }
+
+  async updateSubmissionStatus(id: number, status: string, processingResultId?: string): Promise<void> {
+    const updateData: any = { 
+      xero_submission_status: status,
+      updated_at: new Date()
+    };
+    
+    if (processingResultId) {
+      updateData.processing_result_id = processingResultId;
+    }
+    
+    await db
+      .update(submissionTable)
+      .set(updateData)
+      .where(eq(submissionTable.id, id));
+  }
+
+  async createProcessingResult(insertResult: InsertProcessingResult): Promise<ProcessingResult> {
+    const id = randomUUID();
+    const [result] = await db
+      .insert(processingResultTable)
+      .values({
+        id,
+        consolidated_data: insertResult.consolidated_data,
+        summary: insertResult.summary,
+      })
+      .returning();
+    
+    return {
+      ...insertResult,
+      id: result.id,
+      created_at: result.created_at.toISOString(),
+    };
+  }
+
+  async getProcessingResult(id: string): Promise<ProcessingResult | undefined> {
+    const [result] = await db
+      .select()
+      .from(processingResultTable)
+      .where(eq(processingResultTable.id, id));
+    
+    if (!result) return undefined;
+    
+    return {
+      id: result.id,
+      consolidated_data: result.consolidated_data as any,
+      summary: result.summary as any,
+      created_at: result.created_at.toISOString(),
+    };
+  }
+
+  async getAllProcessingResults(): Promise<ProcessingResult[]> {
+    const results = await db
+      .select()
+      .from(processingResultTable)
+      .orderBy(processingResultTable.created_at);
+    
+    return results.map(result => ({
+      id: result.id,
+      consolidated_data: result.consolidated_data as any,
+      summary: result.summary as any,
+      created_at: result.created_at.toISOString(),
+    })).reverse(); // Most recent first
+  }
+}
+
+export const storage = new DatabaseStorage();
