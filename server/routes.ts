@@ -1222,24 +1222,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       const processingResult = {
-        success: true,
-        pay_period_end_date: "2025-06-08",
-        consolidated_data: { employees },
-        summary: {
-          total_hours: totalHours,
-          employees_found: employees.length,
-          employees_processed: employees.length,
-          total_regular_hours: employeeSummaries.reduce((sum, emp) => sum + emp.regular_hours, 0),
-          total_overtime_hours: employeeSummaries.reduce((sum, emp) => sum + emp.overtime_hours, 0),
-          total_holiday_hours: employeeSummaries.reduce((sum, emp) => sum + emp.holiday_hours, 0),
+        consolidated_data: { 
+          pay_period_end_date: "2025-06-08",
+          employees 
         },
-        employees: employeeSummaries,
-        file_names: [
-          files.site_timesheet[0].originalname,
-          files.travel_timesheet[0].originalname,
-          files.overtime_rates[0].originalname
-        ],
-        xero_submission_status: 'pending'
+        summary: {
+          files_processed: 3,
+          employees_found: employees.length,
+          total_hours: totalHours,
+          pay_period: "2025-06-08",
+          employee_summaries: employeeSummaries,
+        },
       };
 
       const validatedResult = insertProcessingResultSchema.parse(processingResult);
