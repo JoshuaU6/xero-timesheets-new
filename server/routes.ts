@@ -5,6 +5,7 @@ import { insertProcessingResultSchema } from "@shared/schema";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { XeroClient } from "xero-node";
+import { authManager } from "./auth-manager";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -26,46 +27,7 @@ const xero = new XeroClient({
   scopes: 'offline_access payroll.employees.read payroll.timesheets'.split(' ')
 });
 
-// Simple token storage (persist to file to survive server restarts)
-let xeroTokens: any = null;
-let xeroTenantId: string = '';
-
-// Load tokens from file on startup
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
-
-const tokenFile = join(process.cwd(), '.xero-tokens.json');
-
-function loadTokens() {
-  try {
-    console.log('🔍 Checking for token file at:', tokenFile);
-    if (existsSync(tokenFile)) {
-      const data = JSON.parse(readFileSync(tokenFile, 'utf8'));
-      xeroTokens = data.tokens;
-      xeroTenantId = data.tenantId || '';
-      console.log('✅ Loaded tokens from file:', !!xeroTokens, 'tenantId:', !!xeroTenantId);
-    } else {
-      console.log('❌ No token file exists yet');
-    }
-  } catch (error) {
-    console.log('🚨 Error loading tokens:', error);
-  }
-}
-
-function saveTokens() {
-  try {
-    writeFileSync(tokenFile, JSON.stringify({
-      tokens: xeroTokens,
-      tenantId: xeroTenantId
-    }));
-    console.log('Tokens saved to file');
-  } catch (error) {
-    console.error('Failed to save tokens:', error);
-  }
-}
-
-// Load tokens on startup
-loadTokens();
+// Note: Token storage and management is now handled by authManager
 
 // Fuzzy matching function
 function fuzzyMatch(input: string, candidates: string[]): { match: string | null; score: number } {
@@ -372,108 +334,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ message: 'Test route working', timestamp: Date.now() });
   });
 
-  // Debug route to check token storage
-  app.get("/api/xero/debug-tokens", (req, res) => {
-    console.log('🔍 DEBUG: Checking token storage...');
-    res.json({
-      tokensExist: !!xeroTokens,
-      hasAccessToken: !!xeroTokens?.access_token,
-      hasRefreshToken: !!xeroTokens?.refresh_token,
-      tokenType: typeof xeroTokens,
-      timestamp: Date.now()
-    });
+  // Enhanced debug route to check authentication status
+  app.get("/api/xero/debug-tokens", async (req, res) => {
+    console.log('🔍 DEBUG: Checking enhanced authentication status...');
+    try {
+      const authStatus = await authManager.getAuthStatus();
+      res.json({
+        authenticated: authStatus.success,
+        organization: authStatus.organization_name,
+        tenant_id: authStatus.tenant_id?.substring(0, 8) + '...' || 'unknown',
+        has_tokens: !!authStatus.tokens,
+        enhanced_security: true,
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      res.json({
+        authenticated: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        enhanced_security: true,
+        timestamp: Date.now()
+      });
+    }
   });
 
-  // Register connect-new route FIRST, before middleware
+  // Register connect-new route with enhanced OAuth flow
   app.get("/api/xero/connect-new", async (req, res) => {
-    console.log('🎯🎯🎯 CONNECT-NEW ROUTE HIT!!! Starting Xero connection...');
-    console.log('🎯 ROUTE HANDLER STARTED! Inside /api/xero/connect-new');
+    console.log('🔐 Starting enhanced Xero connection with CSRF protection...');
     
-    // Add no-cache headers to prevent caching issues + PROOF OF EXECUTION
+    // Add security headers
     res.set({
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       'Pragma': 'no-cache', 
       'Expires': '0',
-      'X-Route-Hit': 'connect-new-handler-executed',
+      'X-Route-Hit': 'connect-new-enhanced',
       'X-Timestamp': Date.now().toString()
     });
     
     try {
-      console.log('🎯 Building Xero consent URL...');
-      console.log('Xero config:', {
-        clientId: process.env.XERO_CLIENT_ID ? 'Present' : 'Missing',
-        clientSecret: process.env.XERO_CLIENT_SECRET ? 'Present' : 'Missing',
-        redirectUri: process.env.XERO_REDIRECT_URI
-      });
+      console.log('🔑 Generating secure authorization URL...');
+      const { url, state } = await authManager.generateAuthUrl();
       
-      const consentUrl = await xero.buildConsentUrl();
-      console.log('🎯 Consent URL generated successfully:', consentUrl.substring(0, 100) + '...');
-      console.log('🔗 Redirect URI in consent URL:', consentUrl.includes('redirect_uri=') ? 
-        decodeURIComponent(consentUrl.split('redirect_uri=')[1].split('&')[0]) : 'Not found');
-      console.log('🎯 Sending JSON response...');
+      console.log('✅ Enhanced auth URL generated with CSRF protection');
+      console.log('🔗 URL:', url.substring(0, 100) + '...');
+      console.log('🛡️ State (first 8 chars):', state.substring(0, 8));
       
-      res.json({ consentUrl });
-      console.log('🎯 JSON response sent!');
+      res.json({ consentUrl: url, state });
     } catch (error) {
-      console.error('🚨 Error in route handler:', error);
-      res.status(500).json({ message: 'Failed to initiate Xero connection', error: error instanceof Error ? error.message : 'Unknown error' });
+      console.error('❌ Enhanced auth URL generation failed:', error);
+      res.status(500).json({ 
+        message: 'Failed to initiate secure Xero connection', 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
     }
   });
 
-  // Callback route BEFORE middleware  
+  // Enhanced callback route with CSRF validation
   app.get("/xero-callback", async (req, res) => {
-    // Use response headers to debug since console.log isn't working
+    console.log('🔐 Processing OAuth callback with enhanced security...');
+    
+    // Add debug headers
     res.set({
-      'X-Callback-Hit': 'true',
+      'X-Callback-Hit': 'enhanced',
       'X-Code-Present': String(!!req.query.code),
+      'X-State-Present': String(!!req.query.state),
       'X-Error-Present': String(!!req.query.error)
     });
     
     try {
+      if (req.query.error) {
+        console.error('❌ OAuth error received:', req.query.error);
+        throw new Error(`OAuth error: ${req.query.error}`);
+      }
+
       if (!req.query.code) {
+        console.error('❌ No authorization code received');
         throw new Error('No authorization code received');
       }
       
-      await xero.apiCallback(req.originalUrl);
-      xeroTokens = xero.readTokenSet();
+      console.log('🛡️ Validating CSRF state and processing callback...');
       
-      // Get tenant ID (organization ID) after receiving tokens
-      if (xeroTokens) {
-        try {
-          const tokenSet = xeroTokens as any;
-          xero.setTokenSet(tokenSet);
-          
-          // For payroll-only scopes, we can't call updateTenants() as it requires accounting scope
-          // The SDK should have tenant info after OAuth callback - check internal state
-          const sdk = xero as any;
-          if (sdk.tenants && sdk.tenants.length > 0) {
-            xeroTenantId = sdk.tenants[0].tenantId;
-            console.log('Got tenant ID from SDK state after callback:', xeroTenantId);
-          } else {
-            console.log('No tenants in SDK state, will get it during status check');
-          }
-          
-        } catch (tenantError) {
-          console.error('Failed to get tenant ID:', tenantError);
-        }
-        
-        // Save tokens to file for persistence
-        saveTokens();
+      // Handle callback with CSRF validation
+      const result = await authManager.handleCallback(
+        req.originalUrl, 
+        req.query.state as string
+      );
+      
+      if (!result.success) {
+        console.error('❌ Enhanced callback failed:', result.error);
+        throw new Error(result.error || 'Callback processing failed');
       }
       
-      // Add debug headers to track token storage
+      console.log('✅ Enhanced OAuth callback successful');
+      console.log('🏢 Organization:', result.organization_name);
+      
+      // Add success headers
       res.set({
-        'X-Tokens-Stored': String(!!xeroTokens),
-        'X-Has-Access-Token': String(!!xeroTokens?.access_token),
-        'X-Tenant-ID': xeroTenantId || 'none'
+        'X-Auth-Success': 'true',
+        'X-Tenant-ID': result.tenant_id?.substring(0, 8) + '...' || 'unknown',
+        'X-Organization': result.organization_name || 'unknown'
       });
+      
       res.send(`
         <!DOCTYPE html>
         <html>
         <head><title>Xero Connected</title></head>
         <body style="font-family: Arial, sans-serif; text-align: center; margin-top: 100px;">
-          <h1>🔑 Xero Authorization Successful!</h1>
-          <p>You can now close this window and return to the application.</p>
+          <h1>🔐 Xero Authorization Successful!</h1>
+          <p><strong>Organization:</strong> ${result.organization_name || 'Connected'}</p>
+          <p>Enhanced security validation passed. You can now close this window and return to the application.</p>
           <script>
             setTimeout(() => window.close(), 3000);
           </script>
@@ -481,13 +449,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         </html>
       `);
     } catch (error) {
-      console.error('OAuth callback error:', error);
+      console.error('❌ Enhanced OAuth callback error:', error);
       res.status(500).send(`
         <!DOCTYPE html>
         <html>
         <head><title>Xero Connection Failed</title></head>
         <body style="font-family: Arial, sans-serif; text-align: center; margin-top: 100px;">
           <h1>❌ Authorization Failed</h1>
+          <p>Error: ${error instanceof Error ? error.message : 'Unknown error'}</p>
           <p>Please try connecting again.</p>
         </body>
         </html>
@@ -495,96 +464,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Enhanced status route with automatic token refresh
   app.get("/api/xero/status", async (req, res) => {
     try {
-      console.log('Checking Xero status...');
-      console.log('Tokens available:', xeroTokens ? 'Yes' : 'No');
+      console.log('🔍 Checking enhanced Xero authentication status...');
       
-      // If no tokens in memory, try reloading from file
-      if (!xeroTokens) {
-        console.log('No tokens in memory, reloading from file...');
-        loadTokens();
-        console.log('After reload - Tokens:', !!xeroTokens, 'Tenant:', !!xeroTenantId);
+      const authStatus = await authManager.getAuthStatus();
+      
+      if (!authStatus.success) {
+        console.log('❌ Not authenticated:', authStatus.error);
+        return res.json({ 
+          connected: false, 
+          error: authStatus.error,
+          needs_reauth: true 
+        });
       }
       
-      if (!xeroTokens) {
-        console.log('No tokens found');
-        return res.json({ connected: false });
+      console.log('✅ Enhanced authentication validated');
+      console.log('🏢 Organization:', authStatus.organization_name);
+      console.log('🆔 Tenant ID:', authStatus.tenant_id?.substring(0, 8) + '...');
+      
+      // Calculate token expiration info if available
+      let expiresIn: number | undefined;
+      if (authStatus.tokens?.expires_at) {
+        expiresIn = Math.floor((new Date(authStatus.tokens.expires_at).getTime() - Date.now()) / 1000);
       }
       
-      // Check if tokens are still valid - use payroll API since we have payroll scopes
-      console.log('Setting token set and testing connection...');
-      xero.setTokenSet(xeroTokens);
-      try {
-        // Since we have payroll scopes, test with payroll API instead of accounting
-        // Use the stored tenant ID for the API call
-        if (!xeroTenantId) {
-          // For payroll-only scopes, we can't call updateTenants()
-          // Try to get tenant ID from SDK internal state or use a known pattern
-          console.log('No tenant ID available, trying payroll API call...');
-          try {
-            // Try calling with empty tenant ID - the SDK might populate it automatically
-            await xero.payrollUKApi.getEmployees('');
-          } catch (apiError: any) {
-            // Even if this fails, the SDK might have populated tenant info
-            const sdk = xero as any;
-            if (sdk.tenants && sdk.tenants.length > 0) {
-              xeroTenantId = sdk.tenants[0].tenantId;
-              console.log('Extracted tenant ID from SDK:', xeroTenantId);
-              saveTokens();
-            } else {
-              console.log('Will try with hardcoded tenant ID pattern...');
-              // As last resort, extract from the error headers if available
-              if (apiError?.response?.request?.headers?.['xero-tenant-id']) {
-                xeroTenantId = apiError.response.request.headers['xero-tenant-id'];
-                console.log('Got tenant ID from error headers:', xeroTenantId);
-                saveTokens();
-              }
-            }
-          }
-        }
-        
-        await xero.payrollUKApi.getEmployees(xeroTenantId);
-        console.log('Xero Payroll API call successful - connected!');
-        res.json({ connected: true });
-      } catch (validationError) {
-        console.error('Token validation failed:', validationError);
-        // Tokens might be expired
-        xeroTokens = null;
-        res.json({ connected: false });
-      }
+      res.json({ 
+        connected: true,
+        organization_name: authStatus.organization_name,
+        tenant_id: authStatus.tenant_id,
+        expires_in: expiresIn,
+        enhanced_security: true
+      });
+      
     } catch (error) {
-      console.error('Status check error:', error);
-      res.json({ connected: false });
+      console.error('❌ Enhanced status check error:', error);
+      res.json({ 
+        connected: false, 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        enhanced_security: true 
+      });
     }
   });
 
+  // Enhanced timesheet submission with authenticated client
   app.post("/api/xero/post-timesheets", async (req, res) => {
     try {
-      if (!xeroTokens) {
-        return res.status(400).json({ message: 'Not connected to Xero. Please connect first.' });
-      }
-
       const { consolidated_data } = req.body;
       if (!consolidated_data) {
         return res.status(400).json({ message: 'No timesheet data provided' });
       }
 
-      xero.setTokenSet(xeroTokens);
+      console.log('🚀 Posting timesheets with enhanced authentication...');
+      
+      // Use enhanced authentication manager with automatic token refresh
+      const client = await authManager.getAuthenticatedClient();
+      if (!client) {
+        return res.status(401).json({ 
+          message: 'Not authenticated with Xero. Please connect first.',
+          needs_reauth: true 
+        });
+      }
+      
+      console.log('✅ Authenticated client obtained');
+      console.log('🏢 Organization:', authManager.getOrganizationName());
       
       // For now, return success message - full implementation would post to Xero API
       res.json({ 
         success: true, 
-        message: 'Draft pay run would be created in Xero',
-        employees_processed: consolidated_data.employees.length
+        message: 'Draft pay run would be created in Xero with enhanced security',
+        employees_processed: consolidated_data.employees.length,
+        organization: authManager.getOrganizationName(),
+        tenant_id: authManager.getTenantId(),
+        enhanced_security: true
       });
       
       // TODO: When implementing real Xero submission, update submission status:
       // await storage.updateSubmissionStatus(submissionId, "completed", processingResultId);
       
     } catch (error) {
-      console.error('Error posting to Xero:', error);
-      res.status(500).json({ message: 'Failed to post to Xero' });
+      console.error('❌ Enhanced timesheet submission error:', error);
+      res.status(500).json({ 
+        message: 'Failed to post to Xero',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
