@@ -2,6 +2,15 @@
 
 This is a timesheet processing application built with a React frontend and Express.js backend. The system allows users to upload multiple Excel files (site timesheet, travel timesheet, and overtime rates) and consolidates them into a structured JSON format. It performs fuzzy matching for employee names and regions, validates data against known employees and locations, and provides comprehensive processing summaries with detailed employee breakdowns.
 
+# Recent Changes
+
+## Latest Improvements (September 2025)
+- **Enhanced Authentication**: Implemented comprehensive OAuth flow with CSRF protection, automatic token refresh, and better error handling through AuthManager class
+- **Advanced Validation System**: Added ValidationResult classes with fuzzy matching confidence levels (HIGH/MEDIUM/LOW/NO_MATCH), multiple algorithms (Levenshtein, Jaccard, word-level), and structured error reporting with suggestions
+- **Centralized Settings Management**: Implemented configurable validation thresholds, algorithm toggles, processing settings, and import/export capabilities for system configuration through SettingsManager
+- **Dynamic Configuration**: Validation system now uses configurable thresholds and algorithm selection from settings manager instead of hardcoded values
+- **Settings API**: Added comprehensive REST API endpoints for settings management (GET /api/settings, PATCH /api/settings, import/export, reset)
+
 # User Preferences
 
 Preferred communication style: Simple, everyday language.
