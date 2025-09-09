@@ -6,6 +6,13 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { XeroClient } from "xero-node";
 import { authManager } from "./auth-manager";
+import { 
+  regionValidator, 
+  employeeValidator, 
+  ValidationResultBuilder,
+  ValidationStatus,
+  EnhancedFuzzyMatcher 
+} from "./validation-system";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -19,6 +26,10 @@ const upload = multer({
 const KNOWN_EMPLOYEES = ["Charlotte Danes", "Chelsea Serati", "Jack Allan"];
 const VALID_REGIONS = ["Eastside", "South", "North"];
 
+// Initialize enhanced validation system
+employeeValidator.setKnownEmployees(KNOWN_EMPLOYEES);
+regionValidator.setXeroRegions(VALID_REGIONS);
+
 // Initialize Xero client
 const xero = new XeroClient({
   clientId: process.env.XERO_CLIENT_ID!,
@@ -29,38 +40,23 @@ const xero = new XeroClient({
 
 // Note: Token storage and management is now handled by authManager
 
-// Fuzzy matching function
-function fuzzyMatch(input: string, candidates: string[]): { match: string | null; score: number } {
-  input = input.toLowerCase().trim();
-  let bestMatch = null;
-  let bestScore = 0;
+// Enhanced validation helper function
+function validateAndMatchEmployee(input: string, lineNumber?: number): { 
+  match: string | null; 
+  score: number; 
+  confidence: string;
+  suggestions: string[];
+  validationResult: any;
+} {
+  const matchResult = employeeValidator.validateEmployee(input, lineNumber);
   
-  for (const candidate of candidates) {
-    const candidateLower = candidate.toLowerCase();
-    
-    // Exact match
-    if (input === candidateLower) {
-      return { match: candidate, score: 1.0 };
-    }
-    
-    // Check if input contains parts of candidate name
-    const candidateParts = candidateLower.split(' ');
-    let matchedParts = 0;
-    
-    for (const part of candidateParts) {
-      if (input.includes(part) || part.includes(input)) {
-        matchedParts++;
-      }
-    }
-    
-    const score = matchedParts / candidateParts.length;
-    if (score > bestScore && score > 0.5) { // Minimum 50% match
-      bestMatch = candidate;
-      bestScore = score;
-    }
-  }
-  
-  return { match: bestMatch, score: bestScore };
+  return {
+    match: matchResult.matched_name || null,
+    score: matchResult.confidence_score / 100, // Convert to 0-1 scale for compatibility
+    confidence: matchResult.confidence,
+    suggestions: matchResult.suggestions.map(s => s.name),
+    validationResult: matchResult
+  };
 }
 
 // Parse Excel file
@@ -95,11 +91,24 @@ function processSiteTimesheet(workbook: XLSX.WorkBook) {
       if (!nameCell) continue;
       
       const nameStr = String(nameCell).trim();
-      const fuzzyResult = fuzzyMatch(nameStr, KNOWN_EMPLOYEES);
+      const enhancedResult = validateAndMatchEmployee(nameStr, i + 1);
       
-      if (!fuzzyResult.match) continue;
+      if (!enhancedResult.match) {
+        console.log(`⚠️ No match found for employee: "${nameStr}" on line ${i + 1}`);
+        if (enhancedResult.suggestions.length > 0) {
+          console.log(`💡 Suggestions: ${enhancedResult.suggestions.slice(0, 3).join(', ')}`);
+        }
+        continue;
+      }
       
-      const employeeName = fuzzyResult.match;
+      // Log match confidence for debugging
+      console.log(`✅ Employee match: "${nameStr}" → "${enhancedResult.match}" (${enhancedResult.confidence}, ${Math.round(enhancedResult.score * 100)}%)`);
+      
+      if (enhancedResult.confidence === 'LOW' || enhancedResult.confidence === 'MEDIUM') {
+        console.log(`⚠️ Low confidence match - may need verification`);
+      }
+      
+      const employeeName = enhancedResult.match;
       if (!employeeData.has(employeeName)) {
         employeeData.set(employeeName, {
           name: employeeName,
@@ -208,11 +217,15 @@ function processTravelTimesheet(workbook: XLSX.WorkBook, employeeData: Map<strin
         if (!nameCell || travelHours === 0) continue;
         
         const nameStr = String(nameCell).trim();
-        const fuzzyResult = fuzzyMatch(nameStr, KNOWN_EMPLOYEES);
+        const enhancedResult = validateAndMatchEmployee(nameStr, k + 1);
         
-        if (!fuzzyResult.match) continue;
+        if (!enhancedResult.match) {
+          console.log(`⚠️ No travel time match for: "${nameStr}" on line ${k + 1}`);
+          continue;
+        }
         
-        const employeeName = fuzzyResult.match;
+        console.log(`✅ Travel time match: "${nameStr}" → "${enhancedResult.match}" (${enhancedResult.confidence})`);
+        const employeeName = enhancedResult.match;
         if (!employeeData.has(employeeName)) {
           employeeData.set(employeeName, {
             name: employeeName,
@@ -282,11 +295,15 @@ function processOvertimeRates(workbook: XLSX.WorkBook, employeeData: Map<string,
         if (!nameCell) continue;
         
         const nameStr = String(nameCell).trim();
-        const fuzzyResult = fuzzyMatch(nameStr, KNOWN_EMPLOYEES);
+        const enhancedResult = validateAndMatchEmployee(nameStr, k + 1);
         
-        if (!fuzzyResult.match) continue;
+        if (!enhancedResult.match) {
+          console.log(`⚠️ No overtime rate match for: "${nameStr}" on line ${k + 1}`);
+          continue;
+        }
         
-        const employeeName = fuzzyResult.match;
+        console.log(`✅ Overtime rate match: "${nameStr}" → "${enhancedResult.match}" (${enhancedResult.confidence})`);
+        const employeeName = enhancedResult.match;
         
         // Parse the rate - handle both number and string formats
         let overtimeRate = null;
