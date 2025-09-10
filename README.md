@@ -69,10 +69,23 @@ Preferred communication style: Simple, everyday language.
 - **File Upload**: Multer middleware for handling multipart/form-data uploads with 10MB file size limit
 
 ## Development Tools
-- **Build Tool**: Vite with React plugin and runtime error overlay
+- **Build Tool**: Vite with React plugin
 - **Code Quality**: TypeScript strict mode, ESLint configuration implied
-- **Development**: Replit-specific plugins for cartographer and development banner
 - **Hot Reloading**: Vite HMR with Express middleware integration
+
+---
+
+## Next.js Migration (Planned)
+
+This project is being migrated to Next.js for file‑based routing, built‑in API routes, and optional SSR/ISR.
+
+- Frontend: Next.js App Router under `app/`, Tailwind CSS, shadcn/ui
+- API routes: Move endpoints from `server/routes.ts` to Next.js route handlers under `app/api/*`
+- File uploads: Replace Express `multer` with Next.js `formData()` handling or a compatible middleware
+- WebSockets: Use a separate Node server or an edge/socket service
+- Auth to Xero: Keep `auth-manager.ts` logic; adapt to Next route handlers
+
+Temporary state: Vite/Express remain for compatibility during migration. Scripts will be updated as migration completes.
 
 ## Runtime and Deployment
 - **Node.js**: ES modules with top-level await support

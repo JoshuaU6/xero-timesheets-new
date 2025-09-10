@@ -62,7 +62,7 @@ export class AuthManager {
       clientId: process.env.XERO_CLIENT_ID!,
       clientSecret: process.env.XERO_CLIENT_SECRET!,
       redirectUris: [process.env.XERO_REDIRECT_URI!],
-      scopes: 'offline_access payroll.employees.read payroll.timesheets'.split(' '),
+      scopes: 'offline_access payroll.employees.read payroll.timesheets accounting.settings payroll.settings'.split(' '),
       httpTimeout: 30000, // 30 second timeout
     });
 
@@ -190,6 +190,13 @@ export class AuthManager {
     }
 
     try {
+      // Ensure we have a tenant selected if tokens exist
+      if (!this.tenantId) {
+        await this.updateTenantInfo();
+        if (!this.tenantId) {
+          return { valid: false, error: 'No Xero tenant connected' };
+        }
+      }
       // Check if token is expired or expiring soon
       if (this.tokens.expires_at) {
         const now = new Date();
@@ -215,6 +222,12 @@ export class AuthManager {
 
       // If no expiration info, test token with API call
       this.xeroClient.setTokenSet(this.tokens as any);
+      if (!this.tenantId) {
+        await this.updateTenantInfo();
+        if (!this.tenantId) {
+          return { valid: false, error: 'No Xero tenant connected' };
+        }
+      }
       
       try {
         await this.xeroClient.payrollUKApi.getEmployees(this.tenantId);
@@ -279,6 +292,10 @@ export class AuthManager {
       await this.saveTokensToStorage();
 
       console.log('✅ Token refresh successful');
+      // Refresh tenant info if missing
+      if (!this.tenantId) {
+        await this.updateTenantInfo();
+      }
       
       const expiresIn = this.tokens.expires_at ? 
         Math.floor((new Date(this.tokens.expires_at).getTime() - Date.now()) / 1000) : 
@@ -317,6 +334,13 @@ export class AuthManager {
     }
 
     this.xeroClient.setTokenSet(this.tokens as any);
+    if (!this.tenantId) {
+      await this.updateTenantInfo();
+      if (!this.tenantId) {
+        console.error('❌ No tenant available after validation');
+        return null;
+      }
+    }
     return this.xeroClient;
   }
 
@@ -398,16 +422,15 @@ export class AuthManager {
    */
   private async updateTenantInfo(): Promise<void> {
     try {
-      // For payroll-only scopes, we can't call updateTenants()
-      // Try to extract from SDK internal state
-      const sdk = this.xeroClient as any;
-      
-      if (sdk.tenants && sdk.tenants.length > 0) {
-        this.tenantId = sdk.tenants[0].tenantId;
-        this.organizationName = sdk.tenants[0].tenantName || 'Unknown Organization';
+      // Ask SDK for tenants and select the first organisation
+      const tenants = await this.xeroClient.updateTenants();
+      if (Array.isArray(tenants) && tenants.length > 0) {
+        const primary = tenants.find((t: any) => t.tenantType === 'ORGANISATION') || tenants[0];
+        this.tenantId = primary.tenantId || primary.tenantID || '';
+        this.organizationName = primary.tenantName || primary.tenantName || 'Unknown Organization';
         console.log('🏢 Tenant info updated:', this.organizationName);
       } else {
-        console.log('⚠️  No tenant info available in SDK state');
+        console.log('⚠️  No tenants returned from Xero');
       }
     } catch (error) {
       console.error('❌ Failed to update tenant info:', error);
@@ -429,6 +452,8 @@ export class AuthManager {
             ...data.tokens,
             expires_at: data.tokens.expires_at ? new Date(data.tokens.expires_at) : undefined
           };
+          // Set token set early so tenant lookup can work later
+          try { this.xeroClient.setTokenSet(this.tokens as any); } catch {}
         }
         
         this.tenantId = data.tenantId || '';

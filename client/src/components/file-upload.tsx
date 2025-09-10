@@ -29,6 +29,19 @@ export function FileUpload({ onFileUpload, isProcessing }: FileUploadProps) {
     setFiles(prev => ({ ...prev, [type]: file }));
   };
 
+  const clearFile = (type: keyof typeof files) => {
+    setFiles(prev => ({ ...prev, [type]: null }));
+    const refMap = {
+      site_timesheet: siteInputRef,
+      travel_timesheet: travelInputRef,
+      overtime_rates: overtimeInputRef,
+    } as const;
+    const ref = refMap[type];
+    if (ref.current) {
+      ref.current.value = "";
+    }
+  };
+
   const handleProcessFiles = () => {
     if (!files.site_timesheet || !files.travel_timesheet || !files.overtime_rates) {
       return;
@@ -69,7 +82,13 @@ export function FileUpload({ onFileUpload, isProcessing }: FileUploadProps) {
                   <span>Supports .xlsx, .xls formats</span>
                 </div>
                 {files.site_timesheet ? (
-                  <p className="text-green-600 font-medium">✓ {files.site_timesheet.name}</p>
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-green-600 font-medium">✓ {files.site_timesheet.name}</p>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => siteInputRef.current?.click()}>Change File</Button>
+                      <Button variant="ghost" size="sm" onClick={() => clearFile('site_timesheet')}>Remove</Button>
+                    </div>
+                  </div>
                 ) : (
                   <Button 
                     variant="outline" 
@@ -107,7 +126,13 @@ export function FileUpload({ onFileUpload, isProcessing }: FileUploadProps) {
                   <span>Distributed across working days</span>
                 </div>
                 {files.travel_timesheet ? (
-                  <p className="text-green-600 font-medium">✓ {files.travel_timesheet.name}</p>
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-green-600 font-medium">✓ {files.travel_timesheet.name}</p>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => travelInputRef.current?.click()}>Change File</Button>
+                      <Button variant="ghost" size="sm" onClick={() => clearFile('travel_timesheet')}>Remove</Button>
+                    </div>
+                  </div>
                 ) : (
                   <Button 
                     variant="outline" 
@@ -145,7 +170,13 @@ export function FileUpload({ onFileUpload, isProcessing }: FileUploadProps) {
                   <span>Employee-specific rates</span>
                 </div>
                 {files.overtime_rates ? (
-                  <p className="text-green-600 font-medium">✓ {files.overtime_rates.name}</p>
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-green-600 font-medium">✓ {files.overtime_rates.name}</p>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => overtimeInputRef.current?.click()}>Change File</Button>
+                      <Button variant="ghost" size="sm" onClick={() => clearFile('overtime_rates')}>Remove</Button>
+                    </div>
+                  </div>
                 ) : (
                   <Button 
                     variant="outline" 

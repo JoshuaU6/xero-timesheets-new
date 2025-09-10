@@ -17,6 +17,16 @@ interface ProcessingResultsProps {
 export function ProcessingResults({ result, onXeroSubmitted }: ProcessingResultsProps) {
   const [xeroConnected, setXeroConnected] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitReport, setSubmitReport] = useState<null | {
+    success: boolean;
+    message: string;
+    employees_processed: number;
+    employees_failed?: number;
+    failures?: Array<{ employee: string; reason: string }>;
+    preview?: any;
+  }>(null);
+  const [showRawResponse, setShowRawResponse] = useState(false);
+  const [regionMap, setRegionMap] = useState<Record<string, string>>({});
   const { toast } = useToast();
 
   // Check Xero connection status on component mount
@@ -104,11 +114,23 @@ export function ProcessingResults({ result, onXeroSubmitted }: ProcessingResults
         consolidated_data: result.consolidated_data
       });
       const data = await response.json();
+      setSubmitReport(data);
+      // Pull any applied mapping preview (for visibility)
+      const applied = data?.preview?.applied_region_mapping || {};
+      if (applied && Object.keys(applied).length > 0) setRegionMap(applied);
       
-      toast({
-        title: "Success!",
-        description: `${data.message} (${data.employees_processed} employees processed)`,
-      });
+      if (data.employees_failed && data.employees_failed > 0) {
+        toast({
+          title: "Partial validation",
+          description: `${data.employees_failed} employee(s) need attention. See details below.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Success!",
+          description: `${data.message} (${data.employees_processed} employees processed)`,
+        });
+      }
       
       // Call the callback to update the step 4 styling
       onXeroSubmitted?.();
@@ -287,8 +309,85 @@ export function ProcessingResults({ result, onXeroSubmitted }: ProcessingResults
               </Button>
             )}
           </div>
+
+          {submitReport && submitReport.employees_failed > 0 && (
+            <div className="mt-6">
+              <h4 className="font-semibold text-foreground mb-2">Employees needing attention</h4>
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm">
+                <ul className="list-disc pl-5 space-y-1">
+                  {submitReport.failures?.map((f, idx) => (
+                    <li key={idx} className="text-amber-900">
+                      <span className="font-medium">{f.employee}</span>: {f.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="mt-4 p-3 border rounded-md bg-muted">
+                <div className="font-medium mb-2">Region mapping</div>
+                <p className="text-sm text-muted-foreground mb-3">Map spreadsheet region names to Xero options (Settings → Xero). This persists.</p>
+                <RegionMappingEditor currentMap={regionMap} onSaved={(m) => setRegionMap(m)} />
+              </div>
+              <div className="mt-4">
+                <Button variant="outline" size="sm" onClick={() => setShowRawResponse(v => !v)}>
+                  {showRawResponse ? 'Hide' : 'Show'} full API response
+                </Button>
+                {showRawResponse && (
+                  <pre className="mt-2 text-xs whitespace-pre-wrap bg-accent/50 p-2 rounded border">
+                    {JSON.stringify(submitReport, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function RegionMappingEditor({ currentMap, onSaved }: { currentMap: Record<string, string>, onSaved: (m: Record<string, string>) => void }) {
+  const [map, setMap] = useState<Record<string, string>>(currentMap || {});
+  const [keyInput, setKeyInput] = useState('');
+  const [valInput, setValInput] = useState('');
+
+  useEffect(() => { setMap(currentMap || {}) }, [currentMap]);
+
+  const save = async () => {
+    const update: Record<string, string> = { ...map };
+    if (keyInput && valInput) update[keyInput] = valInput;
+    try {
+      const res = await apiRequest('PATCH', '/api/settings', { xero: { regionMapping: update } });
+      const data = await res.json();
+      if (data?.success) onSaved(update);
+    } catch {}
+  };
+
+  const remove = async (k: string) => {
+    const update = { ...map };
+    delete update[k];
+    try {
+      const res = await apiRequest('PATCH', '/api/settings', { xero: { regionMapping: update } });
+      const data = await res.json();
+      if (data?.success) onSaved(update);
+    } catch {}
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <input id="region-mapping-key" name="regionMappingKey" className="flex-1 px-2 py-1 border rounded" placeholder="Spreadsheet region (e.g., South)" value={keyInput} onChange={e => setKeyInput(e.target.value)} />
+        <input id="region-mapping-value" name="regionMappingValue" className="flex-1 px-2 py-1 border rounded" placeholder="Xero option (e.g., South)" value={valInput} onChange={e => setValInput(e.target.value)} />
+        <Button size="sm" onClick={save}>Save</Button>
+      </div>
+      <div className="text-xs text-muted-foreground">Existing mappings</div>
+      <ul className="space-y-1">
+        {Object.entries(map).map(([k, v]) => (
+          <li key={k} className="flex items-center justify-between text-sm bg-accent/50 px-2 py-1 rounded">
+            <span>{k} → {v}</span>
+            <Button variant="outline" size="xs" onClick={() => remove(k)}>Remove</Button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

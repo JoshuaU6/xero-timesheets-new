@@ -1,4 +1,5 @@
-import { useState } from "react";
+"use client";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,9 +21,23 @@ export default function Home() {
   const [uploadedFiles, setUploadedFiles] = useState<FormData | null>(null);
   const { toast } = useToast();
 
+  // Initialize theme from localStorage on first render
+  useEffect(() => {
+    try {
+      const savedTheme = localStorage.getItem('theme');
+      const shouldUseDark = savedTheme === 'dark';
+      setDarkMode(shouldUseDark);
+      document.documentElement.classList.toggle('dark', shouldUseDark);
+    } catch {}
+  }, []);
+
   const toggleTheme = () => {
-    setDarkMode(!darkMode);
-    document.documentElement.classList.toggle('dark');
+    const nextDark = !darkMode;
+    setDarkMode(nextDark);
+    document.documentElement.classList.toggle('dark', nextDark);
+    try {
+      localStorage.setItem('theme', nextDark ? 'dark' : 'light');
+    } catch {}
   };
 
   const processFilesMutation = useMutation({

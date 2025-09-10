@@ -27,6 +27,8 @@ export const SettingsSchema = z.object({
     retryAttempts: z.number().min(1).max(5).default(3),
     rateLimitDelay: z.number().min(100).max(5000).default(1000),
     enableBatchUpload: z.boolean().default(true),
+    // Mapping from parsed region name -> Xero tracking option name (for category 'Region')
+    regionMapping: z.record(z.string(), z.string()).default({}),
   }),
   logging: z.object({
     level: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
@@ -63,6 +65,7 @@ export const DefaultSettings: Settings = {
     retryAttempts: 3,
     rateLimitDelay: 1000,
     enableBatchUpload: true,
+    regionMapping: {},
   },
   logging: {
     level: 'info',
