@@ -1,8 +1,12 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/query-core";
+import type { QueryFunction, QueryFunctionContext } from "@tanstack/query-core";
 
 async function throwIfResNotOk(res: Response) {
+  if (res.ok) return;
+
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
+
     throw new Error(`${res.status}: ${text}`);
   }
 }
@@ -10,11 +14,11 @@ async function throwIfResNotOk(res: Response) {
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown | undefined,
+  data?: unknown | undefined
 ): Promise<Response> {
   // Check if data is FormData (for file uploads)
   const isFormData = data instanceof FormData;
-  
+
   const res = await fetch(url, {
     method,
     headers: data && !isFormData ? { "Content-Type": "application/json" } : {},
@@ -31,7 +35,7 @@ export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+  async ({ queryKey }: QueryFunctionContext) => {
     const res = await fetch(queryKey.join("/") as string, {
       credentials: "include",
     });

@@ -1,6 +1,12 @@
+import { AxiosResponse } from "axios";
 import { NextRequest, NextResponse } from "next/server";
 import { authManager } from "@server/auth-manager";
 import { settingsManager } from "@server/settings-manager";
+import { PayRunCalendar } from "xero-node/dist/gen/model/payroll-uk/payRunCalendar";
+import { Timesheet } from "xero-node/dist/gen/model/payroll-uk/timesheet";
+import { TimesheetLine } from "xero-node/dist/gen/model/payroll-uk/timesheetLine";
+import { extractXeroError, XeroErrorInfo } from "app/utils/xero-error";
+import { TimesheetObject } from "xero-node/dist/gen/model/payroll-uk/timesheetObject";
 
 type ConsolidatedData = {
   pay_period_end_date: string;
@@ -40,7 +46,6 @@ export async function POST(req: NextRequest) {
 
     const tenantId = authManager.getTenantId();
     const data = consolidated_data as ConsolidatedData;
-    console.log("🚀 ~ POST ~ data:", data);
 
     // Fetch live employees, PayItems and Region tracking options from Xero for validation and mapping
     const normalize = (s: string) => s.trim().toLowerCase();
@@ -62,13 +67,7 @@ export async function POST(req: NextRequest) {
       if (k && v) normalizedRegionMapping.set(normalize(k), String(v).trim());
     }
 
-    console.log(
-      "🚀 ~ POST ~ normalizedRegionMapping:",
-      normalizedRegionMapping
-    );
     const empResp = await client.payrollUKApi.getEmployees(tenantId);
-
-    console.log("🚀 ~ POST ~ empResp:", empResp);
 
     if (Array.isArray(empResp.body?.employees)) {
       for (const e of empResp.body.employees) {
@@ -82,7 +81,7 @@ export async function POST(req: NextRequest) {
     }
 
     const payItemsResp = await client.payrollUKApi.getEarningsRates(tenantId);
-    console.log("🚀 ~ POST ~ payItemsResp:", payItemsResp);
+
     const earnings = payItemsResp.body.earningsRates;
     if (Array.isArray(earnings)) {
       for (const er of earnings) {
@@ -127,8 +126,6 @@ export async function POST(req: NextRequest) {
       tenantId
     );
 
-    console.log("🚀 ~ POST ~ trackResp:", trackResp);
-
     const regionCat = trackResp.body?.trackingCategories?.find(
       (c: any) => c.name?.toLowerCase() === "region"
     );
@@ -149,9 +146,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const payrollCalendarsResp = await client.payrollUKApi.getPayRunCalendars(
+      tenantId
+    );
+
+    const payrollCalendarId = payrollCalendarsResp.body?.payRunCalendars?.find(
+      (payRun) => payRun.calendarType === PayRunCalendar.CalendarTypeEnum.Weekly
+    )?.payrollCalendarID;
+
     const failures: Array<{ employee: string; reason: string }> = [];
     const successes: Array<{ employee: string; entries: number }> = [];
-    const preparedPayloads: Array<any> = [];
+    const preparedPayloads: Array<Timesheet> = [];
 
     const inputRegionsRaw = new Set<string>();
     const inputRegionsMapped = new Set<string>();
@@ -233,24 +238,26 @@ export async function POST(req: NextRequest) {
       const payPeriodEnd = data.pay_period_end_date;
       const startDate = new Date(payPeriodEnd);
       startDate.setDate(startDate.getDate() - 6); // 7-day period ending on pay_period_end_date
-      const timesheetLines = Array.from(entriesByDate.entries())
+      const timesheetLines: TimesheetLine[] = Array.from(
+        entriesByDate.entries()
+      )
         .map(([date, entries]) => {
           return entries.map((e) => ({
-            Date: date,
-            EarningsRateID: e.earningsRateId,
-            NumberOfUnits: e.hours,
-            TrackingItemID: e.regionTrackingOptionId,
+            date,
+            earningsRateID: e.earningsRateId,
+            numberOfUnits: e.hours,
+            trackingItemID: e.regionTrackingOptionId,
           }));
         })
         .flat();
 
       preparedPayloads.push({
-        PayrollCalendarID: "",
-        EmployeeID: employeeId,
-        StartDate: startDate.toISOString().slice(0, 10),
-        EndDate: new Date(data.pay_period_end_date).toISOString().slice(0, 10),
-        Status: "Draft",
-        TimesheetLines: timesheetLines,
+        payrollCalendarID: payrollCalendarId!,
+        employeeID: employeeId,
+        startDate: startDate.toISOString().slice(0, 10),
+        endDate: new Date(data.pay_period_end_date).toISOString().slice(0, 10),
+        status: Timesheet.StatusEnum.Draft,
+        timesheetLines: timesheetLines,
       });
 
       // NOTE: Replace with actual POST when ready
@@ -264,6 +271,30 @@ export async function POST(req: NextRequest) {
     const message = success
       ? "Timesheets validated. Ready to create draft pay run in Xero."
       : "Some employees failed validation. Please resolve and retry.";
+
+    if (success) {
+      const allRes: Array<{
+        response: AxiosResponse<any, any>;
+        body: TimesheetObject;
+      }> = [];
+
+      for (const timesheet of preparedPayloads) {
+        const timeSheetRes = await client.payrollUKApi.createTimesheet(
+          tenantId,
+          timesheet
+        );
+
+        allRes.push(timeSheetRes);
+      }
+
+      return NextResponse.json({
+        success,
+        message: allRes.map((res) => res.response?.data?.message).join(", "),
+        employees_processed: successes.length,
+        employees_failed: failures.length,
+        failures,
+      });
+    }
 
     return NextResponse.json({
       success,
@@ -294,12 +325,23 @@ export async function POST(req: NextRequest) {
       tenant_id: tenantId,
     });
   } catch (error: any) {
+    console.log("🚀 ~ POST ~ error:", error);
+
+    // Try to extract the Xero-specific error
+    const extractedError: XeroErrorInfo = extractXeroError(error);
+    console.log("🚀 ~ POST ~ extractedError:", extractedError)
+
+    // Use the extracted status if available, otherwise default to 500
+    const responseStatus = extractedError.status || 500;
+
     return NextResponse.json(
       {
-        message: "Failed to post to Xero",
-        error: error?.message || "Unknown error",
+        message: extractedError.message || "Failed to post to Xero",
+        error: extractedError.message,
+        status: extractedError.status,
+        httpStatusCode: extractedError.httpStatusCode,
       },
-      { status: 500 }
+      { status: responseStatus }
     );
   }
 }
