@@ -2,7 +2,7 @@ import { AxiosResponse } from "axios";
 import { NextRequest, NextResponse } from "next/server";
 import { authManager } from "@server/auth-manager";
 import { settingsManager } from "@server/settings-manager";
-import { PayRunCalendar } from "xero-node/dist/gen/model/payroll-uk/payRunCalendar";
+import { PayRun } from "xero-node/dist/gen/model/payroll-uk/payRun";
 import { Timesheet } from "xero-node/dist/gen/model/payroll-uk/timesheet";
 import { TimesheetLine } from "xero-node/dist/gen/model/payroll-uk/timesheetLine";
 import { extractXeroError, XeroErrorInfo } from "app/utils/xero-error";
@@ -146,13 +146,106 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const payrollCalendarsResp = await client.payrollUKApi.getPayRunCalendars(
-      tenantId
+    // First, calculate the date range from timesheet entries to find the matching pay run
+    const allEntryDates = new Set<string>();
+    for (const emp of data.employees) {
+      for (const entry of emp.daily_entries) {
+        allEntryDates.add(entry.entry_date);
+      }
+    }
+
+    const sortedEntryDates = Array.from(allEntryDates).sort();
+    const timesheetStartDate = sortedEntryDates[0];
+    const timesheetEndDate = sortedEntryDates[sortedEntryDates.length - 1];
+
+    console.log(
+      "🚀 ~ POST ~ Looking for pay run containing dates:",
+      timesheetStartDate,
+      "to",
+      timesheetEndDate
     );
 
-    const payrollCalendarId = payrollCalendarsResp.body?.payRunCalendars?.find(
-      (payRun) => payRun.calendarType === PayRunCalendar.CalendarTypeEnum.Weekly
-    )?.payrollCalendarID;
+    // Get all pay runs to find the one that contains our timesheet dates
+    // Try both Draft and Posted status to see all available pay runs
+    const [draftPayRunsResp, allPayRunsResp] = await Promise.all([
+      client.payrollUKApi.getPayRuns(tenantId, 1, "Draft"),
+      client.payrollUKApi.getPayRuns(tenantId, 1), // Get all statuses
+    ]);
+
+    console.log(
+      "🚀 ~ POST ~ Number of Draft pay runs:",
+      draftPayRunsResp.body?.payRuns?.length || 0,
+      "Draft pay runs:",
+      draftPayRunsResp.body?.payRuns
+    );
+    console.log(
+      "🚀 ~ POST ~ All pay runs:",
+      allPayRunsResp.body?.payRuns?.length || 0
+    );
+
+    const payRunsResp = draftPayRunsResp;
+
+    let matchingPayRun = null;
+    if (payRunsResp.body?.payRuns) {
+      matchingPayRun = payRunsResp.body.payRuns.find((payRun) => {
+        if (!payRun.periodStartDate || !payRun.periodEndDate) return false;
+
+        const payRunStart = new Date(payRun.periodStartDate);
+        const payRunEnd = new Date(payRun.periodEndDate);
+        const timesheetStart = new Date(timesheetStartDate);
+        const timesheetEnd = new Date(timesheetEndDate);
+
+        // Check if timesheet dates fall within this pay run period
+        return timesheetStart >= payRunStart && timesheetEnd <= payRunEnd;
+      });
+    }
+
+    if (!matchingPayRun) {
+      return NextResponse.json(
+        {
+          message: `No matching pay run found for timesheet dates ${timesheetStartDate} to ${timesheetEndDate}. Please create a draft pay run for this period in Xero first.`,
+          timesheet_date_range: {
+            start: timesheetStartDate,
+            end: timesheetEndDate,
+          },
+          available_draft_pay_runs:
+            draftPayRunsResp.body?.payRuns?.map((pr) => ({
+              id: pr.payRunID,
+              start: pr.periodStartDate,
+              end: pr.periodEndDate,
+              status: pr.payRunStatus,
+              calendar_type: pr.calendarType,
+            })) || [],
+          available_all_pay_runs:
+            allPayRunsResp.body?.payRuns?.map((pr) => ({
+              id: pr.payRunID,
+              start: pr.periodStartDate,
+              end: pr.periodEndDate,
+              status: pr.payRunStatus,
+              calendar_type: pr.calendarType,
+            })) || [],
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log(
+      "🚀 ~ POST ~ Found matching pay run:",
+      matchingPayRun.payRunID,
+      "with period:",
+      matchingPayRun.periodStartDate,
+      "to",
+      matchingPayRun.periodEndDate
+    );
+
+    const payrollCalendarId = matchingPayRun.payrollCalendarID;
+    const payRunCalendar = {
+      periodStartDate: matchingPayRun.periodStartDate!,
+      periodEndDate: matchingPayRun.periodEndDate!,
+      name: `Pay Run ${matchingPayRun.payRunID}`,
+      calendarType: matchingPayRun.calendarType,
+      paymentDate: matchingPayRun.paymentDate || matchingPayRun.periodEndDate!,
+    };
 
     const failures: Array<{ employee: string; reason: string }> = [];
     const successes: Array<{ employee: string; entries: number }> = [];
@@ -234,16 +327,64 @@ export async function POST(req: NextRequest) {
         entriesByDate.set(d.entry_date, list);
       }
 
-      // Prepare a preview payload matching Xero Timesheet format (UK payroll)
-      const payPeriodEnd = data.pay_period_end_date;
-      const startDate = new Date(payPeriodEnd);
-      startDate.setDate(startDate.getDate() - 6); // 7-day period ending on pay_period_end_date
+      // Use the pay run period dates, not the actual entry dates
+      const timesheetStartDate = matchingPayRun.periodStartDate!;
+      const timesheetEndDate = matchingPayRun.periodEndDate!;
+
+      // Validate that all entry dates fall within the pay run period
+      const payRunStart = new Date(timesheetStartDate);
+      const payRunEnd = new Date(timesheetEndDate);
+      let hasInvalidDate = false;
+
+      for (const [date] of Array.from(entriesByDate.entries())) {
+        const entryDate = new Date(date);
+        if (entryDate < payRunStart || entryDate > payRunEnd) {
+          failures.push({
+            employee: emp.employee_name,
+            reason: `Entry date ${date} falls outside pay run period ${timesheetStartDate} to ${timesheetEndDate}`,
+          });
+          hasInvalidDate = true;
+          break; // Skip to next employee
+        }
+      }
+
+      if (hasInvalidDate) {
+        continue; // Skip this employee
+      }
+
+      // Debug: Log the exact pay run details
+      console.log("🚀 ~ POST ~ Pay Run Details:", {
+        payRunId: matchingPayRun.payRunID,
+        payrollCalendarId,
+        periodStart: matchingPayRun.periodStartDate,
+        periodEnd: matchingPayRun.periodEndDate,
+        status: matchingPayRun.payRunStatus,
+        calendarType: matchingPayRun.calendarType,
+      });
+
+      // Verify pay run is in Draft status
+      if (matchingPayRun.payRunStatus !== PayRun.PayRunStatusEnum.Draft) {
+        failures.push({
+          employee: emp.employee_name,
+          reason: `Pay run status is '${matchingPayRun.payRunStatus}' but must be 'Draft' to add timesheets`,
+        });
+        continue;
+      }
+
+      console.log(
+        "🚀 ~ POST ~ Using pay run period dates - Start:",
+        timesheetStartDate,
+        "End:",
+        timesheetEndDate
+      );
+
       const timesheetLines: TimesheetLine[] = Array.from(
         entriesByDate.entries()
       )
         .map(([date, entries]) => {
           return entries.map((e) => ({
-            date,
+            // Try simple date format first
+            date: date, // Keep as "2025-09-08" format
             earningsRateID: e.earningsRateId,
             numberOfUnits: e.hours,
             trackingItemID: e.regionTrackingOptionId,
@@ -251,14 +392,71 @@ export async function POST(req: NextRequest) {
         })
         .flat();
 
-      preparedPayloads.push({
-        payrollCalendarID: payrollCalendarId!,
-        employeeID: employeeId,
-        startDate: startDate.toISOString().slice(0, 10),
-        endDate: new Date(data.pay_period_end_date).toISOString().slice(0, 10),
-        status: Timesheet.StatusEnum.Draft,
-        timesheetLines: timesheetLines,
-      });
+      // Debug: Check employee's payroll calendar assignment
+      try {
+        const employeeResp = await client.payrollUKApi.getEmployee(
+          tenantId,
+          employeeId
+        );
+        const employee = employeeResp.body?.employee;
+
+        console.log("🚀 ~ POST ~ Employee payroll details:", {
+          employeeId: employee?.employeeID,
+          employeePayrollCalendarId: employee?.payrollCalendarID,
+          payRunPayrollCalendarId: payrollCalendarId,
+          match: employee?.payrollCalendarID === payrollCalendarId,
+        });
+
+        // If employee has different calendar, use that one instead
+        const actualPayrollCalendarId =
+          employee?.payrollCalendarID || payrollCalendarId;
+
+        // Check for existing timesheets
+        const existingTimesheetsResp = await client.payrollUKApi.getTimesheets(
+          tenantId,
+          1,
+          employeeId
+        );
+
+        console.log(
+          "🚀 ~ POST ~ Existing timesheets:",
+          existingTimesheetsResp.body?.timesheets?.length || 0
+        );
+
+        const conflictingTimesheet =
+          existingTimesheetsResp.body?.timesheets?.find(
+            (ts) =>
+              (ts.startDate === timesheetStartDate ||
+                ts.startDate === timesheetStartDate.split("T")[0]) &&
+              (ts.endDate === timesheetEndDate ||
+                ts.endDate === timesheetEndDate.split("T")[0])
+          );
+
+        if (conflictingTimesheet) {
+          failures.push({
+            employee: emp.employee_name,
+            reason: `Timesheet already exists for period ${timesheetStartDate} to ${timesheetEndDate}`,
+          });
+          continue;
+        }
+
+        preparedPayloads.push({
+          payrollCalendarID: actualPayrollCalendarId!, // Use employee's calendar
+          employeeID: employeeId,
+          // Try different date formats
+          startDate: matchingPayRun.periodStartDate!, // Keep exact format from pay run
+          endDate: matchingPayRun.periodEndDate!,
+          status: Timesheet.StatusEnum.Draft,
+          timesheetLines: timesheetLines,
+        });
+      } catch (employeeError: any) {
+        console.log("🚀 ~ POST ~ Employee fetch error:", employeeError);
+        failures.push({
+          employee: emp.employee_name,
+          reason: `Could not fetch employee details: ${employeeError.message}`,
+        });
+        continue;
+      }
 
       // NOTE: Replace with actual POST when ready
       successes.push({
@@ -320,6 +518,14 @@ export async function POST(req: NextRequest) {
           regular: defaultRegularEarningsRateId,
           overtime: defaultOvertimeEarningsRateId,
         },
+        pay_run_calendar_info: {
+          calendar_id: payrollCalendarId,
+          calendar_name: payRunCalendar.name,
+          calendar_type: payRunCalendar.calendarType,
+          period_start_date: payRunCalendar.periodStartDate,
+          period_end_date: payRunCalendar.periodEndDate,
+          payment_date: payRunCalendar.paymentDate,
+        },
       },
       organization: authManager.getOrganizationName(),
       tenant_id: tenantId,
@@ -329,7 +535,7 @@ export async function POST(req: NextRequest) {
 
     // Try to extract the Xero-specific error
     const extractedError: XeroErrorInfo = extractXeroError(error);
-    console.log("🚀 ~ POST ~ extractedError:", extractedError)
+    console.log("🚀 ~ POST ~ extractedError:", extractedError);
 
     // Use the extracted status if available, otherwise default to 500
     const responseStatus = extractedError.status || 500;
