@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,45 @@ export function ProcessingResults({
   const [regionMap, setRegionMap] = useState<Record<string, string>>({});
   const { toast } = useToast();
   const [regionTotals, setRegionTotals] = useState<Record<string, { regular: number; overtime: number; travel: number; holiday: number; total: number }>>({});
+
+  // Fallback: derive per-employee summaries if server did not include them (e.g., confirmations path)
+  const displayedEmployeeSummaries = useMemo(() => {
+    const serverSummaries = result?.summary?.employee_summaries || [];
+    if (serverSummaries.length > 0) return serverSummaries as any[];
+
+    try {
+      return (result?.consolidated_data?.employees || []).map((emp: any) => {
+        let regular = 0, overtime = 0, travel = 0, holiday = 0;
+        const regions = new Set<string>();
+        let rate: number | null = null;
+        for (const d of emp.daily_entries || []) {
+          const hours = Number(d.hours) || 0;
+          const type = d.hour_type as 'REGULAR' | 'OVERTIME' | 'TRAVEL' | 'HOLIDAY';
+          regions.add(String(d.region_name || ''));
+          if (type === 'REGULAR') regular += hours;
+          if (type === 'OVERTIME') overtime += hours;
+          if (type === 'TRAVEL') travel += hours;
+          if (type === 'HOLIDAY') holiday += hours;
+          if (d.overtime_rate !== null && d.overtime_rate !== undefined) rate = d.overtime_rate;
+        }
+        const total = regular + overtime + travel + holiday;
+        return {
+          employee_name: emp.employee_name,
+          matched_from: emp.employee_name,
+          total_hours: total,
+          regular_hours: regular,
+          overtime_hours: overtime,
+          travel_hours: travel,
+          holiday_hours: holiday,
+          overtime_rate: rate ? `$${Number(rate).toFixed(2)}` : 'Standard',
+          regions_worked: Array.from(regions).filter(Boolean),
+          validation_notes: [],
+        };
+      });
+    } catch {
+      return [];
+    }
+  }, [result]);
 
   // Check Xero connection status on component mount
   useEffect(() => {
@@ -314,7 +353,7 @@ export function ProcessingResults({
 
 
           {/* Employee Breakdown */}
-          <EmployeeBreakdown summaries={result.summary.employee_summaries} />
+          <EmployeeBreakdown summaries={displayedEmployeeSummaries as any} />
 
           {/* Totals by Region (below employee breakdown) */}
           {Object.keys(regionTotals).length > 0 && (
