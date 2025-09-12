@@ -1,6 +1,6 @@
 /**
  * Enhanced OAuth 2.0 Manager for Xero API Authentication
- * 
+ *
  * Improvements over basic implementation:
  * - CSRF protection with state management
  * - Automatic token refresh handling
@@ -10,9 +10,9 @@
  */
 
 import { XeroClient } from "xero-node";
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
-import crypto from 'crypto';
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { join } from "path";
+import crypto from "crypto";
 
 export interface AuthTokens {
   access_token: string;
@@ -46,11 +46,11 @@ export interface ValidationResult {
 export class AuthManager {
   private xeroClient: XeroClient;
   private tokens: AuthTokens | null = null;
-  private tenantId: string = '';
-  private organizationName: string = '';
+  private tenantId: string = "";
+  private organizationName: string = "";
   private activeStates: Map<string, AuthState> = new Map();
   private tokenFile: string;
-  
+
   // Configuration
   private readonly STATE_EXPIRY_MINUTES = 15;
   private readonly TOKEN_REFRESH_BUFFER_MINUTES = 5;
@@ -62,11 +62,14 @@ export class AuthManager {
       clientId: process.env.XERO_CLIENT_ID!,
       clientSecret: process.env.XERO_CLIENT_SECRET!,
       redirectUris: [process.env.XERO_REDIRECT_URI!],
-      scopes: 'offline_access payroll.employees.read payroll.timesheets accounting.settings payroll.settings'.split(' '),
+      scopes:
+        "offline_access payroll.employees.read payroll.timesheets accounting.settings payroll.settings payroll.payruns.read".split(
+          " "
+        ),
       httpTimeout: 30000, // 30 second timeout
     });
 
-    this.tokenFile = join(process.cwd(), '.xero-tokens.json');
+    this.tokenFile = join(process.cwd(), ".xero-tokens.json");
     this.loadTokensFromStorage();
     this.cleanupExpiredStates();
   }
@@ -76,18 +79,18 @@ export class AuthManager {
    */
   async generateAuthUrl(): Promise<{ url: string; state: string }> {
     // Generate cryptographically secure state for CSRF protection
-    const state = crypto.randomBytes(32).toString('hex');
-    
+    const state = crypto.randomBytes(32).toString("hex");
+
     // Store state with expiration
     const authState: AuthState = {
       state,
       created_at: new Date(),
-      expires_at: new Date(Date.now() + this.STATE_EXPIRY_MINUTES * 60 * 1000)
+      expires_at: new Date(Date.now() + this.STATE_EXPIRY_MINUTES * 60 * 1000),
     };
-    
+
     // Clean up old states and add new one
     this.cleanupExpiredStates();
-    
+
     // Prevent memory leaks by limiting active states
     if (this.activeStates.size >= this.MAX_ACTIVE_STATES) {
       const oldestKey = this.activeStates.keys().next().value;
@@ -95,88 +98,107 @@ export class AuthManager {
         this.activeStates.delete(oldestKey);
       }
     }
-    
+
     this.activeStates.set(state, authState);
 
     try {
       // Build consent URL with state parameter
       const consentUrl = await this.xeroClient.buildConsentUrl();
-      
-      console.log('🔐 Generated auth URL with CSRF protection');
-      console.log('🔑 State:', state.substring(0, 8) + '...');
-      
+
+      console.log("🔐 Generated auth URL with CSRF protection");
+      console.log("🔑 State:", state.substring(0, 8) + "...");
+
       return { url: consentUrl, state };
     } catch (error) {
-      console.error('❌ Failed to generate auth URL:', error);
-      throw new Error(`Failed to generate authorization URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("❌ Failed to generate auth URL:", error);
+      throw new Error(
+        `Failed to generate authorization URL: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
   }
 
   /**
    * Handle OAuth callback with CSRF validation
    */
-  async handleCallback(callbackUrl: string, receivedState?: string): Promise<AuthResult> {
+  async handleCallback(
+    callbackUrl: string,
+    receivedState?: string
+  ): Promise<AuthResult> {
     try {
       // Validate state parameter for CSRF protection
       if (receivedState) {
         const authState = this.activeStates.get(receivedState);
-        
+
         if (!authState) {
-          console.error('❌ Invalid or expired state parameter');
-          return { success: false, error: 'Invalid or expired authorization state. Please try again.' };
+          console.error("❌ Invalid or expired state parameter");
+          return {
+            success: false,
+            error: "Invalid or expired authorization state. Please try again.",
+          };
         }
-        
+
         if (new Date() > authState.expires_at) {
-          console.error('❌ Expired state parameter');
+          console.error("❌ Expired state parameter");
           this.activeStates.delete(receivedState);
-          return { success: false, error: 'Authorization session expired. Please try again.' };
+          return {
+            success: false,
+            error: "Authorization session expired. Please try again.",
+          };
         }
-        
+
         // Clean up used state
         this.activeStates.delete(receivedState);
-        console.log('✅ CSRF state validation passed');
+        console.log("✅ CSRF state validation passed");
       }
 
       // Exchange code for tokens
       await this.xeroClient.apiCallback(callbackUrl);
       const tokenSet = this.xeroClient.readTokenSet();
-      
+
       if (!tokenSet) {
-        console.error('❌ No tokens received from callback');
-        return { success: false, error: 'Failed to receive authorization tokens' };
+        console.error("❌ No tokens received from callback");
+        return {
+          success: false,
+          error: "Failed to receive authorization tokens",
+        };
       }
 
       // Store tokens with expiration calculation
       this.tokens = {
         access_token: tokenSet.access_token!,
         refresh_token: tokenSet.refresh_token,
-        expires_at: tokenSet.expires_at ? new Date(tokenSet.expires_at * 1000) : undefined,
+        expires_at: tokenSet.expires_at
+          ? new Date(tokenSet.expires_at * 1000)
+          : undefined,
         token_type: tokenSet.token_type,
-        scope: tokenSet.scope
+        scope: tokenSet.scope,
       };
 
       // Get tenant information
       await this.updateTenantInfo();
-      
+
       // Persist tokens
       await this.saveTokensToStorage();
 
-      console.log('✅ OAuth callback completed successfully');
-      console.log('🏢 Organization:', this.organizationName);
-      console.log('🆔 Tenant ID:', this.tenantId.substring(0, 8) + '...');
+      console.log("✅ OAuth callback completed successfully");
+      console.log("🏢 Organization:", this.organizationName);
+      console.log("🆔 Tenant ID:", this.tenantId.substring(0, 8) + "...");
 
       return {
         success: true,
         tokens: this.tokens,
         tenant_id: this.tenantId,
-        organization_name: this.organizationName
+        organization_name: this.organizationName,
       };
-
     } catch (error) {
-      console.error('❌ OAuth callback error:', error);
+      console.error("❌ OAuth callback error:", error);
       return {
         success: false,
-        error: `Authorization failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        error: `Authorization failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
       };
     }
   }
@@ -186,7 +208,7 @@ export class AuthManager {
    */
   async validateAndRefreshTokens(): Promise<ValidationResult> {
     if (!this.tokens) {
-      return { valid: false, error: 'No tokens available' };
+      return { valid: false, error: "No tokens available" };
     }
 
     try {
@@ -194,7 +216,7 @@ export class AuthManager {
       if (!this.tenantId) {
         await this.updateTenantInfo();
         if (!this.tenantId) {
-          return { valid: false, error: 'No Xero tenant connected' };
+          return { valid: false, error: "No Xero tenant connected" };
         }
       }
       // Check if token is expired or expiring soon
@@ -205,18 +227,18 @@ export class AuthManager {
         const expiresIn = expiresAt.getTime() - now.getTime();
 
         if (expiresIn <= 0) {
-          console.log('🔄 Token expired, attempting refresh...');
+          console.log("🔄 Token expired, attempting refresh...");
           return await this.refreshTokens();
         }
 
         if (expiresIn <= bufferTime) {
-          console.log('🔄 Token expiring soon, attempting refresh...');
+          console.log("🔄 Token expiring soon, attempting refresh...");
           return await this.refreshTokens();
         }
 
         return {
           valid: true,
-          expires_in: Math.floor(expiresIn / 1000)
+          expires_in: Math.floor(expiresIn / 1000),
         };
       }
 
@@ -225,27 +247,28 @@ export class AuthManager {
       if (!this.tenantId) {
         await this.updateTenantInfo();
         if (!this.tenantId) {
-          return { valid: false, error: 'No Xero tenant connected' };
+          return { valid: false, error: "No Xero tenant connected" };
         }
       }
-      
+
       try {
         await this.xeroClient.payrollUKApi.getEmployees(this.tenantId);
-        console.log('✅ Token validation successful');
+        console.log("✅ Token validation successful");
         return { valid: true };
       } catch (apiError: any) {
         if (apiError?.response?.status === 401) {
-          console.log('🔄 Token invalid, attempting refresh...');
+          console.log("🔄 Token invalid, attempting refresh...");
           return await this.refreshTokens();
         }
         throw apiError;
       }
-
     } catch (error) {
-      console.error('❌ Token validation error:', error);
+      console.error("❌ Token validation error:", error);
       return {
         valid: false,
-        error: `Token validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        error: `Token validation failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
       };
     }
   }
@@ -257,17 +280,17 @@ export class AuthManager {
     if (!this.tokens?.refresh_token) {
       return {
         valid: false,
-        error: 'No refresh token available',
-        needs_refresh: true
+        error: "No refresh token available",
+        needs_refresh: true,
       };
     }
 
     try {
-      console.log('🔄 Refreshing access token...');
-      
+      console.log("🔄 Refreshing access token...");
+
       // Set current tokens before refresh
       this.xeroClient.setTokenSet(this.tokens as any);
-      
+
       // Perform token refresh
       const refreshedTokenSet = await this.xeroClient.refreshWithRefreshToken(
         process.env.XERO_CLIENT_ID!,
@@ -276,48 +299,54 @@ export class AuthManager {
       );
 
       if (!refreshedTokenSet) {
-        throw new Error('No tokens returned from refresh');
+        throw new Error("No tokens returned from refresh");
       }
 
       // Update stored tokens
       this.tokens = {
         access_token: refreshedTokenSet.access_token!,
-        refresh_token: refreshedTokenSet.refresh_token || this.tokens.refresh_token,
-        expires_at: refreshedTokenSet.expires_at ? new Date(refreshedTokenSet.expires_at * 1000) : undefined,
+        refresh_token:
+          refreshedTokenSet.refresh_token || this.tokens.refresh_token,
+        expires_at: refreshedTokenSet.expires_at
+          ? new Date(refreshedTokenSet.expires_at * 1000)
+          : undefined,
         token_type: refreshedTokenSet.token_type,
-        scope: refreshedTokenSet.scope
+        scope: refreshedTokenSet.scope,
       };
 
       // Persist refreshed tokens
       await this.saveTokensToStorage();
 
-      console.log('✅ Token refresh successful');
+      console.log("✅ Token refresh successful");
       // Refresh tenant info if missing
       if (!this.tenantId) {
         await this.updateTenantInfo();
       }
-      
-      const expiresIn = this.tokens.expires_at ? 
-        Math.floor((new Date(this.tokens.expires_at).getTime() - Date.now()) / 1000) : 
-        undefined;
+
+      const expiresIn = this.tokens.expires_at
+        ? Math.floor(
+            (new Date(this.tokens.expires_at).getTime() - Date.now()) / 1000
+          )
+        : undefined;
 
       return {
         valid: true,
-        expires_in: expiresIn
+        expires_in: expiresIn,
       };
-
     } catch (error) {
-      console.error('❌ Token refresh failed:', error);
-      
+      console.error("❌ Token refresh failed:", error);
+
       // Clear invalid tokens
       this.tokens = null;
-      this.tenantId = '';
-      this.organizationName = '';
+      this.tenantId = "";
+      this.organizationName = "";
 
       return {
         valid: false,
-        error: `Token refresh failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        needs_refresh: true
+        error: `Token refresh failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+        needs_refresh: true,
       };
     }
   }
@@ -327,9 +356,9 @@ export class AuthManager {
    */
   async getAuthenticatedClient(): Promise<XeroClient | null> {
     const validation = await this.validateAndRefreshTokens();
-    
+
     if (!validation.valid) {
-      console.error('❌ Cannot get authenticated client:', validation.error);
+      console.error("❌ Cannot get authenticated client:", validation.error);
       return null;
     }
 
@@ -337,7 +366,7 @@ export class AuthManager {
     if (!this.tenantId) {
       await this.updateTenantInfo();
       if (!this.tenantId) {
-        console.error('❌ No tenant available after validation');
+        console.error("❌ No tenant available after validation");
         return null;
       }
     }
@@ -347,11 +376,13 @@ export class AuthManager {
   /**
    * Context manager for authenticated API calls
    */
-  async withAuthenticatedClient<T>(callback: (client: XeroClient) => Promise<T>): Promise<T> {
+  async withAuthenticatedClient<T>(
+    callback: (client: XeroClient) => Promise<T>
+  ): Promise<T> {
     const client = await this.getAuthenticatedClient();
-    
+
     if (!client) {
-      throw new Error('Failed to get authenticated Xero client');
+      throw new Error("Failed to get authenticated Xero client");
     }
 
     return await callback(client);
@@ -370,17 +401,17 @@ export class AuthManager {
    */
   async getAuthStatus(): Promise<AuthResult> {
     if (!this.tokens) {
-      return { success: false, error: 'Not authenticated' };
+      return { success: false, error: "Not authenticated" };
     }
 
     const validation = await this.validateAndRefreshTokens();
-    
+
     return {
       success: validation.valid,
       error: validation.error,
       tokens: this.tokens,
       tenant_id: this.tenantId,
-      organization_name: this.organizationName
+      organization_name: this.organizationName,
     };
   }
 
@@ -389,17 +420,17 @@ export class AuthManager {
    */
   async clearAuth(): Promise<void> {
     this.tokens = null;
-    this.tenantId = '';
-    this.organizationName = '';
+    this.tenantId = "";
+    this.organizationName = "";
     this.activeStates.clear();
-    
+
     try {
       if (existsSync(this.tokenFile)) {
         writeFileSync(this.tokenFile, JSON.stringify({}));
       }
-      console.log('✅ Authentication cleared');
+      console.log("✅ Authentication cleared");
     } catch (error) {
-      console.error('❌ Failed to clear token file:', error);
+      console.error("❌ Failed to clear token file:", error);
     }
   }
 
@@ -425,15 +456,18 @@ export class AuthManager {
       // Ask SDK for tenants and select the first organisation
       const tenants = await this.xeroClient.updateTenants();
       if (Array.isArray(tenants) && tenants.length > 0) {
-        const primary = tenants.find((t: any) => t.tenantType === 'ORGANISATION') || tenants[0];
-        this.tenantId = primary.tenantId || primary.tenantID || '';
-        this.organizationName = primary.tenantName || primary.tenantName || 'Unknown Organization';
-        console.log('🏢 Tenant info updated:', this.organizationName);
+        const primary =
+          tenants.find((t: any) => t.tenantType === "ORGANISATION") ||
+          tenants[0];
+        this.tenantId = primary.tenantId || primary.tenantID || "";
+        this.organizationName =
+          primary.tenantName || primary.tenantName || "Unknown Organization";
+        console.log("🏢 Tenant info updated:", this.organizationName);
       } else {
-        console.log('⚠️  No tenants returned from Xero');
+        console.log("⚠️  No tenants returned from Xero");
       }
     } catch (error) {
-      console.error('❌ Failed to update tenant info:', error);
+      console.error("❌ Failed to update tenant info:", error);
     }
   }
 
@@ -442,30 +476,34 @@ export class AuthManager {
    */
   private loadTokensFromStorage(): void {
     try {
-      console.log('🔍 Loading tokens from storage...');
-      
+      console.log("🔍 Loading tokens from storage...");
+
       if (existsSync(this.tokenFile)) {
-        const data = JSON.parse(readFileSync(this.tokenFile, 'utf8'));
-        
+        const data = JSON.parse(readFileSync(this.tokenFile, "utf8"));
+
         if (data.tokens) {
           this.tokens = {
             ...data.tokens,
-            expires_at: data.tokens.expires_at ? new Date(data.tokens.expires_at) : undefined
+            expires_at: data.tokens.expires_at
+              ? new Date(data.tokens.expires_at)
+              : undefined,
           };
           // Set token set early so tenant lookup can work later
-          try { this.xeroClient.setTokenSet(this.tokens as any); } catch {}
+          try {
+            this.xeroClient.setTokenSet(this.tokens as any);
+          } catch {}
         }
-        
-        this.tenantId = data.tenantId || '';
-        this.organizationName = data.organizationName || '';
-        
-        console.log('✅ Tokens loaded from storage');
-        console.log('🏢 Organization:', this.organizationName);
+
+        this.tenantId = data.tenantId || "";
+        this.organizationName = data.organizationName || "";
+
+        console.log("✅ Tokens loaded from storage");
+        console.log("🏢 Organization:", this.organizationName);
       } else {
-        console.log('❌ No token file found');
+        console.log("❌ No token file found");
       }
     } catch (error) {
-      console.error('❌ Failed to load tokens:', error);
+      console.error("❌ Failed to load tokens:", error);
     }
   }
 
@@ -478,13 +516,13 @@ export class AuthManager {
         tokens: this.tokens,
         tenantId: this.tenantId,
         organizationName: this.organizationName,
-        saved_at: new Date().toISOString()
+        saved_at: new Date().toISOString(),
       };
 
       writeFileSync(this.tokenFile, JSON.stringify(data, null, 2));
-      console.log('💾 Tokens saved to storage');
+      console.log("💾 Tokens saved to storage");
     } catch (error) {
-      console.error('❌ Failed to save tokens:', error);
+      console.error("❌ Failed to save tokens:", error);
       throw error;
     }
   }
