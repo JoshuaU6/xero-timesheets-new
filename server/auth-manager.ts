@@ -69,7 +69,11 @@ export class AuthManager {
       httpTimeout: 30000, // 30 second timeout
     });
 
-    this.tokenFile = join(process.cwd(), ".xero-tokens.json");
+    // Use a writable location in serverless (e.g., Vercel) to avoid EROFS
+    // Prefer XERO_TOKEN_FILE if provided; fallback to /tmp in Vercel; else project root in dev
+    const tokenFileFromEnv = process.env.XERO_TOKEN_FILE;
+    const isVercel = Boolean(process.env.VERCEL);
+    this.tokenFile = tokenFileFromEnv || (isVercel ? join("/tmp", "xero-tokens.json") : join(process.cwd(), ".xero-tokens.json"));
     this.loadTokensFromStorage();
     this.cleanupExpiredStates();
   }
