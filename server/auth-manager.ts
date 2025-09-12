@@ -13,6 +13,9 @@ import { XeroClient } from "xero-node";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import crypto from "crypto";
+import { db } from "./db";
+import { xeroTokenTable } from "@shared/schema";
+import { sql, eq } from "drizzle-orm";
 
 export interface AuthTokens {
   access_token: string;
@@ -50,6 +53,7 @@ export class AuthManager {
   private organizationName: string = "";
   private activeStates: Map<string, AuthState> = new Map();
   private tokenFile: string;
+  private useDatabase: boolean;
 
   // Configuration
   private readonly STATE_EXPIRY_MINUTES = 15;
@@ -74,8 +78,74 @@ export class AuthManager {
     const tokenFileFromEnv = process.env.XERO_TOKEN_FILE;
     const isVercel = Boolean(process.env.VERCEL);
     this.tokenFile = tokenFileFromEnv || (isVercel ? join("/tmp", "xero-tokens.json") : join(process.cwd(), ".xero-tokens.json"));
+    this.useDatabase = Boolean(process.env.DATABASE_URL);
     this.loadTokensFromStorage();
     this.cleanupExpiredStates();
+  }
+
+  /**
+   * Hydrate manager with tokens from an external store (per-session usage).
+   */
+  public hydrate(tokens: AuthTokens, tenantId?: string, organizationName?: string) {
+    this.tokens = tokens;
+    if (tenantId) this.tenantId = tenantId;
+    if (organizationName) this.organizationName = organizationName;
+    try {
+      this.xeroClient.setTokenSet(this.tokens as any);
+    } catch {}
+  }
+
+  /**
+   * Persist current tokens to DB for this session id
+   */
+  public async saveTokensForSession(sessionId: string): Promise<void> {
+    if (!this.useDatabase || !db) return;
+    if (!this.tokens) return;
+    try {
+      await db.insert(xeroTokenTable).values({
+        session_id: sessionId,
+        tokens: this.tokens as any,
+        tenant_id: this.tenantId,
+        organization_name: this.organizationName,
+      });
+      console.log("🗄️ Session tokens saved (", sessionId.substring(0, 6), ")");
+    } catch (e) {
+      console.warn("⚠️ Failed to save session tokens:", e instanceof Error ? e.message : e);
+    }
+  }
+
+  /**
+   * Restore tokens from DB by session id (per-user)
+   */
+  public async restoreTokensForSession(sessionId: string): Promise<void> {
+    if (!this.useDatabase || !db) return;
+    try {
+      const rows = await db
+        .select()
+        .from(xeroTokenTable)
+        .where(eq(xeroTokenTable.session_id, sessionId))
+        .orderBy(sql`"saved_at" DESC`)
+        .limit(1);
+      const row = Array.isArray(rows) ? (rows[0] as any) : undefined;
+      if (!row) return;
+      const tokenLike = row.tokens as any;
+      if (!tokenLike?.access_token) return;
+      this.tokens = {
+        access_token: tokenLike.access_token,
+        refresh_token: tokenLike.refresh_token,
+        expires_at: tokenLike.expires_at ? new Date(tokenLike.expires_at) : undefined,
+        token_type: tokenLike.token_type,
+        scope: tokenLike.scope,
+      };
+      this.tenantId = row.tenant_id || this.tenantId;
+      this.organizationName = row.organization_name || this.organizationName;
+      try {
+        this.xeroClient.setTokenSet(this.tokens as any);
+      } catch {}
+      console.log("🔁 Restored Xero tokens for session", sessionId.substring(0, 6));
+    } catch (e) {
+      console.warn("⚠️ Failed to restore session tokens:", e instanceof Error ? e.message : e);
+    }
   }
 
   /**
@@ -212,7 +282,11 @@ export class AuthManager {
    */
   async validateAndRefreshTokens(): Promise<ValidationResult> {
     if (!this.tokens) {
-      return { valid: false, error: "No tokens available" };
+      // Attempt restore from persistent store (DB) in serverless
+      await this.restoreTokensFromDatabaseIfAvailable();
+      if (!this.tokens) {
+        return { valid: false, error: "No tokens available" };
+      }
     }
 
     try {
@@ -405,7 +479,10 @@ export class AuthManager {
    */
   async getAuthStatus(): Promise<AuthResult> {
     if (!this.tokens) {
-      return { success: false, error: "Not authenticated" };
+      await this.restoreTokensFromDatabaseIfAvailable();
+      if (!this.tokens) {
+        return { success: false, error: "Not authenticated" };
+      }
     }
 
     const validation = await this.validateAndRefreshTokens();
@@ -481,7 +558,11 @@ export class AuthManager {
   private loadTokensFromStorage(): void {
     try {
       console.log("🔍 Loading tokens from storage...");
-
+      // Prefer database if configured
+      if (this.useDatabase && db) {
+        // Synchronous-like read via top-1 by saved_at desc
+        // Note: db is async; here we can't await, so fall back below. We'll rely on file for initial load.
+      }
       if (existsSync(this.tokenFile)) {
         const data = JSON.parse(readFileSync(this.tokenFile, "utf8"));
 
@@ -522,12 +603,59 @@ export class AuthManager {
         organizationName: this.organizationName,
         saved_at: new Date().toISOString(),
       };
-
+      // Write to file (local dev or serverless /tmp)
       writeFileSync(this.tokenFile, JSON.stringify(data, null, 2));
       console.log("💾 Tokens saved to storage");
+      // Also persist to DB if available so successive serverless invocations can restore
+      if (this.useDatabase && db) {
+        try {
+          await db.insert(xeroTokenTable).values({
+            tokens: this.tokens as any,
+            tenant_id: this.tenantId,
+            organization_name: this.organizationName,
+          });
+          console.log("🗄️ Tokens saved to database");
+        } catch (e) {
+          console.warn("⚠️ Failed to save tokens to database:", e instanceof Error ? e.message : e);
+        }
+      }
     } catch (error) {
       console.error("❌ Failed to save tokens:", error);
       throw error;
+    }
+  }
+
+  /**
+   * Best-effort restore from database if available (for serverless cold starts)
+   */
+  private async restoreTokensFromDatabaseIfAvailable(): Promise<void> {
+    if (!this.useDatabase || !db) return;
+    try {
+      // Get latest saved token row
+      const rows = await db
+        .select()
+        .from(xeroTokenTable)
+        .orderBy(sql`"saved_at" DESC`)
+        .limit(1);
+      const row = Array.isArray(rows) ? rows[0] as any : undefined;
+      if (!row) return;
+      const tokenLike = row.tokens as any;
+      if (!tokenLike?.access_token) return;
+      this.tokens = {
+        access_token: tokenLike.access_token,
+        refresh_token: tokenLike.refresh_token,
+        expires_at: tokenLike.expires_at ? new Date(tokenLike.expires_at) : undefined,
+        token_type: tokenLike.token_type,
+        scope: tokenLike.scope,
+      };
+      this.tenantId = row.tenant_id || this.tenantId;
+      this.organizationName = row.organization_name || this.organizationName;
+      try {
+        this.xeroClient.setTokenSet(this.tokens as any);
+      } catch {}
+      console.log("🔁 Restored Xero tokens from database");
+    } catch (e) {
+      console.warn("⚠️ Failed to restore tokens from database:", e instanceof Error ? e.message : e);
     }
   }
 

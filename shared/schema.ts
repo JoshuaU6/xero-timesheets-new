@@ -76,6 +76,16 @@ export const processingResultTable = pgTable("processing_results", {
   created_at: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Xero tokens persistence (for serverless deployments)
+export const xeroTokenTable = pgTable("xero_tokens", {
+  id: serial("id").primaryKey(),
+  session_id: varchar("session_id", { length: 64 }),
+  tokens: jsonb("tokens"),
+  tenant_id: varchar("tenant_id", { length: 100 }),
+  organization_name: varchar("organization_name", { length: 200 }),
+  saved_at: timestamp("saved_at").defaultNow().notNull(),
+});
+
 // Zod schemas for database operations
 export const SubmissionSchema = z.object({
   id: z.number(),

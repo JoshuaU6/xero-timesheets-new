@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { authManager } from '@server/auth-manager'
+import { cookies } from 'next/headers'
 
 const KNOWN_EMPLOYEES = [
   "Charlotte Danes",
@@ -11,8 +12,14 @@ const KNOWN_EMPLOYEES = [
 ]
 const VALID_REGIONS = ["Eastside", "South", "North"]
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    // Attempt to restore per-session tokens
+    const sid = cookies().get('sid')?.value
+    if (sid) {
+      await authManager.restoreTokensForSession(sid)
+    }
+
     const authStatus = await authManager.getAuthStatus()
     if (!authStatus.success) {
       return NextResponse.json({ connected: false, error: authStatus.error, known_employees: KNOWN_EMPLOYEES, valid_regions: VALID_REGIONS, needs_reauth: true })
