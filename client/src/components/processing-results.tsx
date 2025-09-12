@@ -38,10 +38,33 @@ export function ProcessingResults({
   const [showRawResponse, setShowRawResponse] = useState(false);
   const [regionMap, setRegionMap] = useState<Record<string, string>>({});
   const { toast } = useToast();
+  const [regionTotals, setRegionTotals] = useState<Record<string, { regular: number; overtime: number; travel: number; holiday: number; total: number }>>({});
 
   // Check Xero connection status on component mount
   useEffect(() => {
     checkXeroStatus();
+    // Compute region totals from employee summaries
+    try {
+      const totals: Record<string, { regular: number; overtime: number; travel: number; holiday: number; total: number }> = {};
+      for (const emp of result.summary.employee_summaries) {
+        // Per-employee only lists regions, but detailed per-day entries are in consolidated_data
+      }
+      // Build from consolidated_data for accuracy
+      for (const emp of result.consolidated_data.employees) {
+        for (const d of emp.daily_entries as any[]) {
+          const region = d.region_name || 'Unknown';
+          const hourType = d.hour_type as 'REGULAR' | 'OVERTIME' | 'TRAVEL' | 'HOLIDAY';
+          const hours = Number(d.hours) || 0;
+          if (!totals[region]) totals[region] = { regular: 0, overtime: 0, travel: 0, holiday: 0, total: 0 };
+          if (hourType === 'REGULAR') totals[region].regular += hours;
+          if (hourType === 'OVERTIME') totals[region].overtime += hours;
+          if (hourType === 'TRAVEL') totals[region].travel += hours;
+          if (hourType === 'HOLIDAY') totals[region].holiday += hours;
+          totals[region].total += hours;
+        }
+      }
+      setRegionTotals(totals);
+    } catch {}
   }, []);
 
   const checkXeroStatus = async () => {
@@ -288,6 +311,48 @@ export function ProcessingResults({
               </div>
             </div>
           </div>
+
+          {/* Totals by Region */}
+          {Object.keys(regionTotals).length > 0 && (
+            <div className="space-y-3 mb-8">
+              <h3 className="text-xl font-semibold text-foreground">Totals by Region</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border border-border rounded">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="text-left p-2">Region</th>
+                      <th className="text-right p-2">Regular</th>
+                      <th className="text-right p-2">Overtime</th>
+                      <th className="text-right p-2">Travel</th>
+                      <th className="text-right p-2">Holiday</th>
+                      <th className="text-right p-2">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(regionTotals).map(([region, t]) => (
+                      <tr key={region} className="border-t border-border">
+                        <td className="p-2">{region}</td>
+                        <td className="p-2 text-right">{t.regular.toFixed(1)}</td>
+                        <td className="p-2 text-right">{t.overtime.toFixed(1)}</td>
+                        <td className="p-2 text-right">{t.travel.toFixed(1)}</td>
+                        <td className="p-2 text-right">{t.holiday.toFixed(1)}</td>
+                        <td className="p-2 text-right font-medium">{t.total.toFixed(1)}</td>
+                      </tr>
+                    ))}
+                    {/* Grand total row */}
+                    <tr className="border-t border-border bg-accent/40">
+                      <td className="p-2 font-medium">Grand Total</td>
+                      <td className="p-2 text-right font-medium">{Object.values(regionTotals).reduce((s, r) => s + r.regular, 0).toFixed(1)}</td>
+                      <td className="p-2 text-right font-medium">{Object.values(regionTotals).reduce((s, r) => s + r.overtime, 0).toFixed(1)}</td>
+                      <td className="p-2 text-right font-medium">{Object.values(regionTotals).reduce((s, r) => s + r.travel, 0).toFixed(1)}</td>
+                      <td className="p-2 text-right font-medium">{Object.values(regionTotals).reduce((s, r) => s + r.holiday, 0).toFixed(1)}</td>
+                      <td className="p-2 text-right font-semibold">{Object.values(regionTotals).reduce((s, r) => s + r.total, 0).toFixed(1)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Employee Breakdown */}
           <EmployeeBreakdown summaries={result.summary.employee_summaries} />

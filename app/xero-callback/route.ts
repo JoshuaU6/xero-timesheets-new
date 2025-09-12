@@ -30,8 +30,8 @@ export async function GET(req: NextRequest) {
 
     const body = `<!DOCTYPE html><html><head><title>Xero Connected</title></head><body style="font-family: Arial, sans-serif; text-align: center; margin-top: 100px;"><h1>🔐 Xero Authorization Successful!</h1><p><strong>Organization:</strong> ${result.organization_name || 'Connected'}</p><p>Enhanced security validation passed. You can now close this window and return to the application.</p><script>setTimeout(() => window.close(), 3000);</script></body></html>`
     const res = new NextResponse(body, { headers: { 'Content-Type': 'text/html' } })
-    // Set/refresh sid cookie on response
-    res.cookies.set('sid', sid, { httpOnly: true, sameSite: 'lax', secure: true, path: '/', maxAge: 60 * 60 * 24 * 365 })
+    // Set/refresh sid cookie on response (secure only in production so localhost works)
+    res.cookies.set('sid', sid, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 60 * 60 * 24 * 365 })
     return res
   } catch (error: any) {
     const body = `<!DOCTYPE html><html><head><title>Xero Connection Failed</title></head><body style="font-family: Arial, sans-serif; text-align: center; margin-top: 100px;"><h1>❌ Authorization Failed</h1><p>Error: ${error?.message || 'Unknown error'}</p><p>Please try connecting again.</p></body></html>`

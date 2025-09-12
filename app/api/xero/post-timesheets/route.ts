@@ -54,6 +54,12 @@ export async function POST(req: NextRequest) {
     let regionNameToTrackingOptionId = new Map<string, string>();
     let simplifiedRegionNameToTrackingOptionId = new Map<string, string>();
     let earningsRateNameToId = new Map<string, string>();
+    // Optional mapping from overtime multiplier to specific Xero earnings rate name
+    const overtimeRateToEarningsName: Array<{ match: (rate: number | null) => boolean; name: string }> = [
+      { match: (r) => r === 2 || r === 2.0, name: "Overtime 2x" },
+      { match: (r) => r === 1.75, name: "Overtime 1.75x" },
+      { match: (r) => r === 1.5, name: "Overtime 1.5x" },
+    ];
     let availableEarningsRateNames: string[] = [];
     let defaultRegularEarningsRateId: string | undefined;
     let defaultOvertimeEarningsRateId: string | undefined;
@@ -300,12 +306,25 @@ export async function POST(req: NextRequest) {
       for (const d of emp.daily_entries) {
         const list = entriesByDate.get(d.entry_date) || [];
         const isOvertime = d.hour_type === "OVERTIME";
-        const erName = isOvertime ? "Overtime Hours" : "Regular Hours";
-        const erId =
+        // Pick earnings rate: for overtime, try mapping by multiplier first, then fallback to defaults
+        let erName = isOvertime ? "Overtime Hours" : "Regular Hours";
+        let erId: string | undefined;
+        if (isOvertime) {
+          const rate = d.overtime_rate as number | null;
+          let mappedName: string | undefined;
+          if (rate && !isNaN(rate)) {
+            const found = overtimeRateToEarningsName.find((m) => m.match(rate));
+            if (found) mappedName = found.name;
+          }
+          if (mappedName) {
+            erName = mappedName;
+            erId = earningsRateNameToId.get(normalize(erName));
+          }
+        }
+        erId =
+          erId ||
           earningsRateNameToId.get(normalize(erName)) ||
-          (isOvertime
-            ? defaultOvertimeEarningsRateId
-            : defaultRegularEarningsRateId);
+          (isOvertime ? defaultOvertimeEarningsRateId : defaultRegularEarningsRateId);
         if (!erId) {
           failures.push({
             employee: emp.employee_name,
