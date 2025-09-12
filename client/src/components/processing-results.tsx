@@ -312,9 +312,13 @@ export function ProcessingResults({
             </div>
           </div>
 
-          {/* Totals by Region */}
+
+          {/* Employee Breakdown */}
+          <EmployeeBreakdown summaries={result.summary.employee_summaries} />
+
+          {/* Totals by Region (below employee breakdown) */}
           {Object.keys(regionTotals).length > 0 && (
-            <div className="space-y-3 mb-8">
+            <div className="space-y-3 mt-8">
               <h3 className="text-xl font-semibold text-foreground">Totals by Region</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm border border-border rounded">
@@ -353,9 +357,6 @@ export function ProcessingResults({
               </div>
             </div>
           )}
-
-          {/* Employee Breakdown */}
-          <EmployeeBreakdown summaries={result.summary.employee_summaries} />
         </CardContent>
       </Card>
 
