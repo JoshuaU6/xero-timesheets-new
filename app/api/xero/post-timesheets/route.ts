@@ -250,6 +250,10 @@ export async function POST(req: NextRequest) {
     const failures: Array<{ employee: string; reason: string }> = [];
     const successes: Array<{ employee: string; entries: number }> = [];
     const preparedPayloads: Array<Timesheet> = [];
+    const preparedLineReplacements: Array<{
+      timesheetId: string;
+      newLines: TimesheetLine[];
+    }> = [];
 
     const inputRegionsRaw = new Set<string>();
     const inputRegionsMapped = new Set<string>();
@@ -433,22 +437,35 @@ export async function POST(req: NextRequest) {
           );
 
         if (conflictingTimesheet) {
-          failures.push({
-            employee: emp.employee_name,
-            reason: `Timesheet already exists for period ${timesheetStartDate} to ${timesheetEndDate}`,
-          });
-          continue;
-        }
+          const existingStatus = conflictingTimesheet.status as unknown as string | undefined;
+          const isDraft =
+            existingStatus === (Timesheet.StatusEnum?.Draft as unknown as string) ||
+            existingStatus === "Draft";
 
-        preparedPayloads.push({
-          payrollCalendarID: actualPayrollCalendarId!, // Use employee's calendar
-          employeeID: employeeId,
-          // Try different date formats
-          startDate: matchingPayRun.periodStartDate!, // Keep exact format from pay run
-          endDate: matchingPayRun.periodEndDate!,
-          status: Timesheet.StatusEnum.Draft,
-          timesheetLines: timesheetLines,
-        });
+          if (!isDraft) {
+            failures.push({
+              employee: emp.employee_name,
+              reason: `Existing timesheet for ${timesheetStartDate} to ${timesheetEndDate} is not in Draft status`,
+            });
+            continue;
+          }
+
+          // Plan to replace lines on the existing draft timesheet
+          preparedLineReplacements.push({
+            timesheetId: String(conflictingTimesheet.timesheetID),
+            newLines: timesheetLines,
+          });
+        } else {
+          preparedPayloads.push({
+            payrollCalendarID: actualPayrollCalendarId!, // Use employee's calendar
+            employeeID: employeeId,
+            // Try different date formats
+            startDate: matchingPayRun.periodStartDate!, // Keep exact format from pay run
+            endDate: matchingPayRun.periodEndDate!,
+            status: Timesheet.StatusEnum.Draft,
+            timesheetLines: timesheetLines,
+          });
+        }
       } catch (employeeError: any) {
         console.log("🚀 ~ POST ~ Employee fetch error:", employeeError);
         failures.push({
@@ -476,18 +493,51 @@ export async function POST(req: NextRequest) {
         body: TimesheetObject;
       }> = [];
 
+      // Create new timesheets
       for (const timesheet of preparedPayloads) {
         const timeSheetRes = await client.payrollUKApi.createTimesheet(
           tenantId,
           timesheet
         );
-
         allRes.push(timeSheetRes);
+      }
+
+      // For existing draft timesheets: delete all existing lines and recreate with new lines
+      for (const repl of preparedLineReplacements) {
+        // Fetch current lines
+        const existingTs = await client.payrollUKApi.getTimesheet(
+          tenantId,
+          repl.timesheetId
+        );
+        const currentLines = existingTs.body?.timesheet?.timesheetLines || [];
+
+        // Delete existing lines
+        for (const line of currentLines) {
+          const lineId = (line as any)?.timesheetLineID as string | undefined;
+          if (!lineId) continue;
+          await client.payrollUKApi.deleteTimesheetLine(
+            tenantId,
+            repl.timesheetId,
+            lineId
+          );
+        }
+
+        // Create new lines
+        for (const nl of repl.newLines) {
+          const createLineRes = await client.payrollUKApi.createTimesheetLine(
+            tenantId,
+            repl.timesheetId,
+            nl
+          );
+          allRes.push(createLineRes);
+        }
       }
 
       return NextResponse.json({
         success,
-        message: allRes.map((res) => res.response?.data?.message).join(", "),
+        message:
+          allRes.map((res) => res.response?.data?.message).join(", ") ||
+          `Processed ${preparedPayloads.length} new and ${preparedLineReplacements.length} updated timesheet(s)`,
         employees_processed: successes.length,
         employees_failed: failures.length,
         failures,

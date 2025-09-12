@@ -180,6 +180,7 @@ export async function POST(req: NextRequest) {
     };
 
     let employeeData = new Map();
+    const overtimeRatesByEmployee = new Map<string, number | null>();
 
     // Parse three files
     const [siteBuf, travelBuf, overtimeBuf] = await Promise.all([
@@ -323,7 +324,70 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Travel workbook (first sheet)
+    // Travel workbook is intentionally processed later so it doesn't affect overtime calculations
+
+    // Overtime workbook (first sheet) - store rates per employee for later application
+    {
+      const sheet =
+        overtimeWb.workbook.Sheets[overtimeWb.workbook.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      let nameColIndex = -1,
+        rateColIndex = -1;
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i] as any[];
+        if (!row) continue;
+        for (let j = 0; j < row.length; j++) {
+          const cell = String(row[j]).toLowerCase();
+          if (cell.includes("name") || cell.includes("employee"))
+            nameColIndex = j;
+          if (cell.includes("rate") || cell.includes("overtime"))
+            rateColIndex = j;
+        }
+        if (nameColIndex !== -1 && rateColIndex !== -1) {
+          for (let k = i + 1; k < data.length; k++) {
+            const empRow = data[k] as any[];
+            if (!empRow) continue;
+            const nameCell = empRow[nameColIndex];
+            const rateValue = empRow[rateColIndex];
+            if (!nameCell) continue;
+            const nameStr = String(nameCell).trim();
+            const res = validateAndMatchEmployee(
+              nameStr,
+              k + 1,
+              "overtime_rates"
+            );
+            if (!res.match) continue;
+            const employeeName = res.match;
+            let overtimeRate: number | null = null;
+            if (
+              rateValue !== undefined &&
+              rateValue !== null &&
+              rateValue !== ""
+            ) {
+              const rateStr = String(rateValue).replace(/[^0-9.]/g, "");
+              const parsed = parseFloat(rateStr);
+              if (!isNaN(parsed) && parsed > 0) overtimeRate = parsed;
+            }
+            overtimeRatesByEmployee.set(employeeName, overtimeRate);
+          }
+          break;
+        }
+      }
+    }
+
+    // If any pending matches require confirmation, return them now
+    if (pendingMatches.length > 0) {
+      return NextResponse.json({
+        success: false,
+        needsConfirmation: true,
+        pendingMatches,
+        message: `Found ${pendingMatches.length} employee name(s) that need confirmation before processing can continue.`,
+      });
+    }
+
+    employeeData = calculateOvertimeHours(employeeData);
+
+    // Now process Travel workbook (first sheet), adding entries as TRAVEL (not counted toward overtime)
     {
       const sheet = travelWb.workbook.Sheets[travelWb.workbook.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
@@ -380,28 +444,21 @@ export async function POST(req: NextRequest) {
             }
             const employee = employeeData.get(employeeName);
             const regionName = String(travelRegion).trim();
-            const existing = employee.entries.find(
-              (e: any) =>
-                e.entry_date === entryDate &&
-                e.region_name === regionName &&
-                e.hour_type === "REGULAR"
-            );
-            if (existing) existing.hours += travelHours;
-            else
-              employee.entries.push({
-                entry_date: entryDate,
-                region_name: regionName,
-                hours: travelHours,
-                hour_type: "REGULAR",
-                overtime_rate: null,
-              });
+            // Keep travel as separate type
+            employee.entries.push({
+              entry_date: entryDate,
+              region_name: regionName,
+              hours: travelHours,
+              hour_type: "TRAVEL",
+              overtime_rate: null,
+            });
             if (
               !employee.validationNotes.some((n: string) =>
                 n.includes("travel time")
               )
             ) {
               employee.validationNotes.push(
-                "Travel time hours included in regular hours totals."
+                "Travel time kept separate and not included in overtime."
               );
             }
           }
@@ -410,76 +467,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Overtime workbook (first sheet)
-    {
-      const sheet =
-        overtimeWb.workbook.Sheets[overtimeWb.workbook.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-      let nameColIndex = -1,
-        rateColIndex = -1;
-      for (let i = 0; i < data.length; i++) {
-        const row = data[i] as any[];
-        if (!row) continue;
-        for (let j = 0; j < row.length; j++) {
-          const cell = String(row[j]).toLowerCase();
-          if (cell.includes("name") || cell.includes("employee"))
-            nameColIndex = j;
-          if (cell.includes("rate") || cell.includes("overtime"))
-            rateColIndex = j;
-        }
-        if (nameColIndex !== -1 && rateColIndex !== -1) {
-          for (let k = i + 1; k < data.length; k++) {
-            const empRow = data[k] as any[];
-            if (!empRow) continue;
-            const nameCell = empRow[nameColIndex];
-            const rateValue = empRow[rateColIndex];
-            if (!nameCell) continue;
-            const nameStr = String(nameCell).trim();
-            const res = validateAndMatchEmployee(
-              nameStr,
-              k + 1,
-              "overtime_rates"
-            );
-            if (!res.match) continue;
-            const employeeName = res.match;
-            let overtimeRate: number | null = null;
-            if (
-              rateValue !== undefined &&
-              rateValue !== null &&
-              rateValue !== ""
-            ) {
-              const rateStr = String(rateValue).replace(/[^0-9.]/g, "");
-              const parsed = parseFloat(rateStr);
-              if (!isNaN(parsed) && parsed > 0) overtimeRate = parsed;
-            }
-            if (employeeData.has(employeeName)) {
-              const employee = employeeData.get(employeeName);
-              employee.entries.forEach((entry: any) => {
-                entry.overtime_rate = overtimeRate;
-              });
-              employee.validationNotes.push(
-                overtimeRate
-                  ? `Overtime rate applied: $${overtimeRate.toFixed(2)}.`
-                  : "Overtime rate applied: Standard."
-              );
-            }
-          }
-          break;
-        }
-      }
-    }
-
-    // If any pending matches require confirmation, return them now
-    if (pendingMatches.length > 0) {
-      return NextResponse.json({
-        success: false,
-        needsConfirmation: true,
-        pendingMatches,
-        message: `Found ${pendingMatches.length} employee name(s) that need confirmation before processing can continue.`,
+    // Apply overtime rate to all entries for employees where provided
+    for (const [, employee] of Array.from(employeeData.entries())) {
+      const rate = overtimeRatesByEmployee.get(employee.name) ?? null;
+      employee.entries.forEach((entry: any) => {
+        entry.overtime_rate = rate;
       });
+      if (rate !== undefined) {
+        employee.validationNotes.push(
+          rate
+            ? `Overtime rate applied: $${rate.toFixed(2)}.`
+            : "Overtime rate applied: Standard."
+        );
+      }
     }
-
-    employeeData = calculateOvertimeHours(employeeData);
 
     const employees = Array.from(employeeData.values()).map((emp: any) => ({
       employee_name: emp.name,
@@ -506,10 +507,13 @@ export async function POST(req: NextRequest) {
         const overtimeHours = emp.entries
           .filter((e: any) => e.hour_type === "OVERTIME")
           .reduce((s: number, e: any) => s + e.hours, 0);
+        const travelHours = emp.entries
+          .filter((e: any) => e.hour_type === "TRAVEL")
+          .reduce((s: number, e: any) => s + e.hours, 0);
         const holidayHours = emp.entries
           .filter((e: any) => e.hour_type === "HOLIDAY")
           .reduce((s: number, e: any) => s + e.hours, 0);
-        const totalEmpHours = regularHours + overtimeHours + holidayHours;
+        const totalEmpHours = regularHours + overtimeHours + holidayHours + travelHours;
         const regions = Array.from(
           new Set(emp.entries.map((e: any) => e.region_name))
         );
@@ -522,7 +526,7 @@ export async function POST(req: NextRequest) {
           total_hours: totalEmpHours,
           regular_hours: regularHours,
           overtime_hours: overtimeHours,
-          travel_hours: 0,
+          travel_hours: travelHours,
           holiday_hours: holidayHours,
           overtime_rate: overtimeRate
             ? `$${overtimeRate.toFixed(2)}`
