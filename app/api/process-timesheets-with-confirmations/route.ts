@@ -102,6 +102,58 @@ export async function POST(req: NextRequest) {
     };
 
     let employeeData = new Map();
+
+    // Helpers copied from main processing to compute weekly overtime (REGULAR > 40 -> OVERTIME)
+    const getWeekStart = (date: Date): Date => {
+      const d = new Date(date);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      return new Date(d.setDate(diff));
+    };
+    const calculateOvertimeHours = (data: Map<string, any>) => {
+      for (const [, employee] of Array.from(data.entries())) {
+        const weeklyEntries = new Map<string, any[]>();
+        for (const entry of employee.entries) {
+          if (entry.hour_type !== "REGULAR") continue;
+          const entryDate = new Date(entry.entry_date);
+          const weekStart = getWeekStart(entryDate);
+          const weekKey = weekStart.toISOString().split("T")[0];
+          if (!weeklyEntries.has(weekKey)) weeklyEntries.set(weekKey, []);
+          weeklyEntries.get(weekKey)!.push(entry);
+        }
+        for (const [, weekEntries] of Array.from(weeklyEntries.entries())) {
+          const totalWeeklyHours = weekEntries.reduce(
+            (sum: number, e: any) => sum + e.hours,
+            0
+          );
+          if (totalWeeklyHours > 40) {
+            let remaining = totalWeeklyHours - 40;
+            for (let i = weekEntries.length - 1; i >= 0 && remaining > 0; i--) {
+              const entry = weekEntries[i];
+              const used = Math.min(entry.hours, remaining);
+              if (used > 0) {
+                entry.hours -= used;
+                remaining -= used;
+                employee.entries.push({
+                  entry_date: entry.entry_date,
+                  region_name: entry.region_name,
+                  hours: used,
+                  hour_type: "OVERTIME",
+                  overtime_rate: entry.overtime_rate,
+                });
+              }
+            }
+            for (const entry of [...employee.entries]) {
+              if (entry.hour_type === "REGULAR" && entry.hours === 0) {
+                const idx = employee.entries.indexOf(entry);
+                if (idx > -1) employee.entries.splice(idx, 1);
+              }
+            }
+          }
+        }
+      }
+      return data;
+    };
     const siteWb = parseExcelFile(siteBuf, site.name);
     // Minimal processing using the validator-with-confirmations
     const regions = siteWb.workbook.SheetNames;
@@ -175,6 +227,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Compute overtime from REGULAR hours only (travel excluded in this minimal flow)
+    employeeData = calculateOvertimeHours(employeeData);
+
     const employees = Array.from(employeeData.values()).map((emp: any) => ({
       employee_name: emp.name,
       daily_entries: emp.entries.map((entry: any) => ({
@@ -191,6 +246,39 @@ export async function POST(req: NextRequest) {
         total + emp.daily_entries.reduce((t: number, e: any) => t + e.hours, 0),
       0
     );
+    // Build per-employee summaries for UI
+    const employeeSummaries = Array.from(employeeData.values()).map(
+      (emp: any) => {
+        const regularHours = emp.entries
+          .filter((e: any) => e.hour_type === "REGULAR")
+          .reduce((s: number, e: any) => s + e.hours, 0);
+        const overtimeHours = emp.entries
+          .filter((e: any) => e.hour_type === "OVERTIME")
+          .reduce((s: number, e: any) => s + e.hours, 0);
+        const travelHours = emp.entries
+          .filter((e: any) => e.hour_type === "TRAVEL")
+          .reduce((s: number, e: any) => s + e.hours, 0);
+        const holidayHours = emp.entries
+          .filter((e: any) => e.hour_type === "HOLIDAY")
+          .reduce((s: number, e: any) => s + e.hours, 0);
+        const totalEmpHours = regularHours + overtimeHours + travelHours + holidayHours;
+        const regions = Array.from(new Set(emp.entries.map((e: any) => e.region_name)));
+        const overtimeRate = emp.entries.find((e: any) => e.overtime_rate !== null)?.overtime_rate;
+        return {
+          employee_name: emp.name,
+          matched_from: emp.matchedFrom || emp.name,
+          total_hours: totalEmpHours,
+          regular_hours: regularHours,
+          overtime_hours: overtimeHours,
+          travel_hours: travelHours,
+          holiday_hours: holidayHours,
+          overtime_rate: overtimeRate ? `$${overtimeRate.toFixed(2)}` : "Standard",
+          regions_worked: regions,
+          validation_notes: emp.validationNotes || [],
+        };
+      }
+    );
+
     const processingResult = {
       consolidated_data: { pay_period_end_date: "2025-09-14", employees },
       summary: {
@@ -198,7 +286,7 @@ export async function POST(req: NextRequest) {
         employees_found: employees.length,
         total_hours: totalHours,
         pay_period: "2025-09-14",
-        employee_summaries: [],
+        employee_summaries: employeeSummaries,
       },
     };
     const validated = insertProcessingResultSchema.parse(processingResult);
