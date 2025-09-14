@@ -180,6 +180,20 @@ export default function Home() {
     }
   };
 
+  const handleDisconnectXero = async () => {
+    try {
+      await apiRequest("POST", "/api/xero/disconnect");
+      queryClient.invalidateQueries({ queryKey: ["/api/xero/status"] });
+      setCurrentResult(null);
+      setPendingMatches([]);
+      setUploadedFiles(null);
+      setXeroSubmitted(false);
+      toast({ title: "Disconnected", description: "Xero session cleared. You can reconnect to demo the flow." });
+    } catch (e: any) {
+      toast({ title: "Disconnect Failed", description: e?.message || "Failed to disconnect.", variant: "destructive" });
+    }
+  };
+
   const handleConfirmMatches = (confirmations: Record<string, string | null>) => {
     if (uploadedFiles) {
       processWithConfirmationsMutation.mutate({ 
@@ -281,7 +295,10 @@ export default function Home() {
               {!isConnected ? (
                 <Button onClick={handleConnectXeroEarly} data-testid="button-connect-xero-early">Connect to Xero</Button>
               ) : (
-                <Badge variant="secondary" className="bg-green-100 text-green-800">Connected</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="bg-green-100 text-green-800">Connected</Badge>
+                  <Button variant="outline" onClick={handleDisconnectXero} data-testid="button-disconnect-xero">Disconnect</Button>
+                </div>
               )}
             </CardContent>
           </Card>
