@@ -161,8 +161,18 @@ export async function POST(req: NextRequest) {
     }
 
     const sortedEntryDates = Array.from(allEntryDates).sort();
-    const timesheetStartDate = sortedEntryDates[0];
-    const timesheetEndDate = sortedEntryDates[sortedEntryDates.length - 1];
+    let timesheetStartDate = sortedEntryDates[0];
+    let timesheetEndDate = sortedEntryDates[sortedEntryDates.length - 1];
+    // Fallback: derive from pay_period_end_date if entries did not include dates
+    if ((!timesheetStartDate || !timesheetEndDate) && (data as any)?.pay_period_end_date) {
+      try {
+        const end = new Date((data as any).pay_period_end_date);
+        const start = new Date(end);
+        start.setDate(end.getDate() - 6);
+        timesheetStartDate = start.toISOString().split("T")[0];
+        timesheetEndDate = end.toISOString().split("T")[0];
+      } catch {}
+    }
 
     console.log(
       "🚀 ~ POST ~ Looking for pay run containing dates:",

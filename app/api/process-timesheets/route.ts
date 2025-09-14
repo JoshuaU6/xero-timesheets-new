@@ -9,18 +9,10 @@ import {
 } from "@server/validation-system";
 import { authManager } from "@server/auth-manager";
 
-const KNOWN_EMPLOYEES = [
-  "Charlotte Danes",
-  "Chelsea Serati",
-  "Jack Allan",
-  "Andrew Dwyer",
-  "Pamela Beesly",
-  "Dwight K Schrute",
-];
-const VALID_REGIONS = ["Eastside", "South", "North"];
-
-employeeValidator.setKnownEmployees(KNOWN_EMPLOYEES);
-regionValidator.setXeroRegions(VALID_REGIONS);
+// Do not use demo employees for matching; rely on live Xero list when connected
+const FALLBACK_REGIONS = ["Eastside", "South", "North"];
+employeeValidator.setKnownEmployees([]);
+regionValidator.setXeroRegions([]);
 
 export async function POST(req: NextRequest) {
   try {
@@ -194,7 +186,7 @@ export async function POST(req: NextRequest) {
     const overtimeWb = parseExcelFile(overtimeBuf, overtime.name);
 
     // Determine allowed regions (prefer live from Xero if authenticated)
-    let allowedRegions = [...VALID_REGIONS];
+    let allowedRegions = [...FALLBACK_REGIONS];
     let xeroEmployees: string[] | undefined;
     try {
       const client = await authManager.getAuthenticatedClient();
@@ -225,6 +217,10 @@ export async function POST(req: NextRequest) {
             .map((o: any) => o.name)
             .filter(Boolean);
         }
+      } else {
+        // Not connected: keep known employees empty to avoid non-Xero suggestions
+        employeeValidator.setKnownEmployees([]);
+        allowedRegions = [];
       }
     } catch {}
 
@@ -238,7 +234,7 @@ export async function POST(req: NextRequest) {
     // Site workbook (multi-tab by region)
     const regions = siteWb.workbook.SheetNames;
     for (const regionName of regions) {
-      if (!allowedRegions.includes(regionName)) {
+      if (allowedRegions.length > 0 && !allowedRegions.includes(regionName)) {
         unknownRegions.add(regionName);
         continue;
       }
