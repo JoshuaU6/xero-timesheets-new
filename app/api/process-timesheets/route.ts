@@ -138,14 +138,44 @@ export async function POST(req: NextRequest) {
       lineNumber?: number,
       fileType: string = "unknown"
     ) => {
-      const matchResult = employeeValidator.validateEmployee(input, lineNumber);
-      // New rule: if no exact match to Xero employee, require confirmation (even if no suggestions)
-      const hasExact = Boolean(matchResult.matched_name);
-      const needs = !hasExact || (matchResult.confidence_score < 95);
-      if (needs) {
-        if (!pendingMatches.some((p) => p.input_name === input && p.file_type === fileType)) {
+      const raw = String(input || "").trim();
+      // Heuristic: skip obvious headers/non-names
+      const headerLike =
+        raw.length < 3 ||
+        raw.includes(":") ||
+        /\d/.test(raw) ||
+        [/WEEK/i, /COMPANY/i, /REGION/i, /SUPERVISOR/i, /CONTRACTOR/i, /EMPLOYEE\s*NAME/i, /To\s*Temporary/i, /signed\s*by\s*supervisor/i].some((re) => re.test(raw));
+      if (headerLike) {
+        return {
+          match: null,
+          score: 0,
+          confidence: "LOW",
+          suggestions: [],
+          validationResult: null,
+          needsConfirmation: false,
+        };
+      }
+
+      const matchResult = employeeValidator.validateEmployee(raw, lineNumber);
+      const hasExact = Boolean(matchResult.matched_name) && matchResult.confidence_score >= 95;
+      if (hasExact) {
+        return {
+          match: matchResult.matched_name,
+          score: matchResult.confidence_score / 100,
+          confidence: matchResult.confidence,
+          suggestions: [],
+          validationResult: matchResult,
+          needsConfirmation: false,
+        };
+      }
+
+      // Only ask for confirmation if we have a reasonably strong suggestion from Xero
+      const top = matchResult.suggestions?.[0];
+      const strongSuggestion = top && top.score >= 70;
+      if (strongSuggestion) {
+        if (!pendingMatches.some((p) => p.input_name === raw && p.file_type === fileType)) {
           pendingMatches.push({
-            input_name: input,
+            input_name: raw,
             line_number: lineNumber,
             file_type: fileType,
             suggestions: matchResult.suggestions.map((s: any) => ({
@@ -155,14 +185,24 @@ export async function POST(req: NextRequest) {
             })),
           });
         }
+        return {
+          match: null,
+          score: matchResult.confidence_score / 100,
+          confidence: matchResult.confidence,
+          suggestions: matchResult.suggestions.map((s: any) => s.name),
+          validationResult: matchResult,
+          needsConfirmation: true,
+        };
       }
+
+      // Otherwise, skip silently (do not force user to review non-matches)
       return {
-        match: hasExact && matchResult.confidence_score >= 95 ? matchResult.matched_name : null,
+        match: null,
         score: matchResult.confidence_score / 100,
         confidence: matchResult.confidence,
-        suggestions: matchResult.suggestions.map((s: any) => s.name),
+        suggestions: [],
         validationResult: matchResult,
-        needsConfirmation: needs,
+        needsConfirmation: false,
       };
     };
 
