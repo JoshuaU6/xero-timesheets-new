@@ -23,6 +23,7 @@ export default function Home() {
 
   const { data: xeroStatus } = useQuery<any>({ queryKey: ["/api/xero/status"], staleTime: 15_000 });
   const isConnected = Boolean(xeroStatus?.connected);
+  const orgName = xeroStatus?.organization_name;
 
   // Initialize theme from localStorage on first render
   useEffect(() => {
@@ -149,6 +150,35 @@ export default function Home() {
     processFilesMutation.mutate(formData);
   };
 
+  const handleConnectXeroEarly = async () => {
+    try {
+      const cacheBuster = Date.now();
+      const response = await apiRequest("GET", `/api/xero/connect-new?t=${cacheBuster}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Unknown error" }));
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      if (!data.consentUrl) throw new Error("No consent URL received from server");
+      const popup = window.open(data.consentUrl, "_blank", "width=800,height=600");
+      if (!popup) throw new Error("Popup was blocked by browser. Please allow popups and try again.");
+      const poll = setInterval(async () => {
+        try {
+          const statusRes = await apiRequest("GET", "/api/xero/status");
+          const statusData = await statusRes.json();
+          if (statusData.connected) {
+            clearInterval(poll);
+            queryClient.invalidateQueries({ queryKey: ["/api/xero/status"] });
+            toast({ title: "Xero Connected", description: `Connected to ${statusData.organization_name || "organization"}.` });
+          }
+        } catch {}
+      }, 2000);
+      setTimeout(() => clearInterval(poll), 60000);
+    } catch (e: any) {
+      toast({ title: "Connection Failed", description: e?.message || "Failed to connect to Xero.", variant: "destructive" });
+    }
+  };
+
   const handleConfirmMatches = (confirmations: Record<string, string | null>) => {
     if (uploadedFiles) {
       processWithConfirmationsMutation.mutate({ 
@@ -234,6 +264,26 @@ export default function Home() {
               <span className={`text-sm font-medium ${xeroSubmitted ? 'text-foreground' : 'text-muted-foreground'}`}>Export to Xero</span>
             </div>
           </div>
+        </div>
+
+        {/* Pre-Upload Xero Connection Section */}
+        <div className="mb-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">Xero Connection</CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between">
+              <div className="text-sm">
+                <div className="font-medium">Status: {isConnected ? "Connected" : "Not connected"}</div>
+                <div className="text-muted-foreground">{isConnected ? (orgName || "") : "Connect to Xero before processing so names/regions match your org."}</div>
+              </div>
+              {!isConnected ? (
+                <Button onClick={handleConnectXeroEarly} data-testid="button-connect-xero-early">Connect to Xero</Button>
+              ) : (
+                <Badge variant="secondary" className="bg-green-100 text-green-800">Connected</Badge>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* File Upload Section */}
