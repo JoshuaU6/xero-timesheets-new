@@ -139,16 +139,11 @@ export async function POST(req: NextRequest) {
       fileType: string = "unknown"
     ) => {
       const matchResult = employeeValidator.validateEmployee(input, lineNumber);
-      const needs =
-        matchResult.confidence_score < 95 &&
-        matchResult.confidence_score >= 70 &&
-        matchResult.suggestions.length > 0;
+      // New rule: if no exact match to Xero employee, require confirmation (even if no suggestions)
+      const hasExact = Boolean(matchResult.matched_name);
+      const needs = !hasExact || (matchResult.confidence_score < 95);
       if (needs) {
-        if (
-          !pendingMatches.some(
-            (p) => p.input_name === input && p.file_type === fileType
-          )
-        ) {
+        if (!pendingMatches.some((p) => p.input_name === input && p.file_type === fileType)) {
           pendingMatches.push({
             input_name: input,
             line_number: lineNumber,
@@ -162,7 +157,7 @@ export async function POST(req: NextRequest) {
         }
       }
       return {
-        match: needs ? null : matchResult.matched_name || null,
+        match: hasExact && matchResult.confidence_score >= 95 ? matchResult.matched_name : null,
         score: matchResult.confidence_score / 100,
         confidence: matchResult.confidence,
         suggestions: matchResult.suggestions.map((s: any) => s.name),
