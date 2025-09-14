@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authManager } from '@server/auth-manager'
 import { cookies } from 'next/headers'
+import crypto from 'crypto'
 
 const KNOWN_EMPLOYEES = [
   "Charlotte Danes",
@@ -18,6 +19,25 @@ export async function GET(req: NextRequest) {
     const sid = cookies().get('sid')?.value
     if (sid) {
       await authManager.restoreTokensForSession(sid)
+    }
+    // Try decrypting cookie token if present
+    const xat = cookies().get('xat')?.value
+    if (xat) {
+      try {
+        const buf = Buffer.from(xat, 'base64')
+        const iv = buf.subarray(0, 12)
+        const tag = buf.subarray(12, 28)
+        const enc = buf.subarray(28)
+        const secret = process.env.XERO_COOKIE_SECRET || process.env.XERO_CLIENT_SECRET || 'fallback-secret'
+        const key = crypto.createHash('sha256').update(secret).digest()
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv)
+        decipher.setAuthTag(tag)
+        const dec = Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8')
+        const payload = JSON.parse(dec)
+        if (payload?.tokens) {
+          authManager.hydrate(payload.tokens, payload.tenantId, payload.organizationName)
+        }
+      } catch {}
     }
 
     const authStatus = await authManager.getAuthStatus()
