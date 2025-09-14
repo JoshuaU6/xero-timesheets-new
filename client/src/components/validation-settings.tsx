@@ -34,6 +34,12 @@ export function ValidationSettings() {
   return (
     <div className="space-y-3 text-sm">
       <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">Xero Organization</span>
+        <span className="text-foreground font-medium">
+          {xeroStatus?.connected ? (xeroStatus.organization_name || 'Connected') : 'Not connected'}
+        </span>
+      </div>
+      <div className="flex items-center justify-between">
         <span className="text-muted-foreground">Known Employees</span>
         <span className="text-foreground font-medium">
           {knownEmployeesCount} employee{knownEmployeesCount !== 1 ? 's' : ''}

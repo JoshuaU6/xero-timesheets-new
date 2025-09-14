@@ -189,27 +189,28 @@ export async function POST(req: NextRequest) {
       allPayRunsResp.body?.payRuns?.length || 0
     );
 
-    const payRunsResp = draftPayRunsResp;
-
-    let matchingPayRun = null;
-    if (payRunsResp.body?.payRuns) {
-      matchingPayRun = payRunsResp.body.payRuns.find((payRun) => {
-        if (!payRun.periodStartDate || !payRun.periodEndDate) return false;
-
-        const payRunStart = new Date(payRun.periodStartDate);
-        const payRunEnd = new Date(payRun.periodEndDate);
-        const timesheetStart = new Date(timesheetStartDate);
-        const timesheetEnd = new Date(timesheetEndDate);
-
-        // Check if timesheet dates fall within this pay run period
-        return timesheetStart >= payRunStart && timesheetEnd <= payRunEnd;
-      });
+    // Pick the latest draft pay run that contains the period
+    let matchingPayRun = null as any;
+    if (draftPayRunsResp.body?.payRuns) {
+      const candidate = draftPayRunsResp.body.payRuns
+        .filter((pr: any) => pr.periodStartDate && pr.periodEndDate)
+        .filter((pr: any) => {
+          const payRunStart = new Date(pr.periodStartDate);
+          const payRunEnd = new Date(pr.periodEndDate);
+          const timesheetStart = new Date(timesheetStartDate);
+          const timesheetEnd = new Date(timesheetEndDate);
+          return timesheetStart >= payRunStart && timesheetEnd <= payRunEnd;
+        })
+        .sort((a: any, b: any) => new Date(b.periodEndDate).getTime() - new Date(a.periodEndDate).getTime());
+      matchingPayRun = candidate[0] || null;
     }
 
     if (!matchingPayRun) {
+      // Suggest helpful guidance and provide nearby options
+      const suggestion = `No matching draft pay run covers ${timesheetStartDate} to ${timesheetEndDate}. In Xero → Payroll → Pay Runs, create a Draft weekly pay run with start ${timesheetStartDate} and end ${timesheetEndDate}.`;
       return NextResponse.json(
         {
-          message: `No matching pay run found for timesheet dates ${timesheetStartDate} to ${timesheetEndDate}. Please create a draft pay run for this period in Xero first.`,
+          message: suggestion,
           timesheet_date_range: {
             start: timesheetStartDate,
             end: timesheetEndDate,

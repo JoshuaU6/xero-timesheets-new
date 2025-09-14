@@ -3,8 +3,9 @@ import * as XLSX from "xlsx";
 import { storage } from "@server/storage";
 import { insertProcessingResultSchema } from "@shared/schema";
 import { employeeValidator, regionValidator } from "@server/validation-system";
+import { authManager } from "@server/auth-manager";
 
-const KNOWN_EMPLOYEES = [
+const FALLBACK_EMPLOYEES = [
   "Charlotte Danes",
   "Chelsea Serati",
   "Jack Allan",
@@ -12,13 +13,44 @@ const KNOWN_EMPLOYEES = [
   "Pamela Beesly",
   "Dwight K Schrute",
 ];
-const VALID_REGIONS = ["Eastside", "South", "North"];
-
-employeeValidator.setKnownEmployees(KNOWN_EMPLOYEES);
-regionValidator.setXeroRegions(VALID_REGIONS);
+const FALLBACK_REGIONS = ["Eastside", "South", "North"];
 
 export async function POST(req: NextRequest) {
   try {
+    // Dynamically load live employees and regions from Xero when connected
+    let allowedRegions = [...FALLBACK_REGIONS];
+    try {
+      const client = await authManager.getAuthenticatedClient();
+      if (client) {
+        const tenantId = authManager.getTenantId();
+        // Employees (Payroll UK)
+        try {
+          const empResp = await client.payrollUKApi.getEmployees(tenantId);
+          if (Array.isArray(empResp.body?.employees)) {
+            const xeroEmployees = empResp.body.employees
+              .map((e: any) => [e.firstName, e.middleNames, e.lastName].filter(Boolean).join(" ").trim())
+              .filter(Boolean);
+            if (xeroEmployees.length > 0) {
+              employeeValidator.setKnownEmployees(xeroEmployees);
+            }
+          }
+        } catch {}
+        // Regions from Accounting → Tracking Category "Region"
+        try {
+          const trackResp = await client.accountingApi.getTrackingCategories(tenantId);
+          const regionCat = trackResp.body?.trackingCategories?.find((c: any) => c.name?.toLowerCase() === "region");
+          if (regionCat?.options) {
+            allowedRegions = regionCat.options.map((o: any) => o.name).filter(Boolean);
+          }
+        } catch {}
+      } else {
+        // Not connected: ensure validator uses an empty set to avoid non-Xero suggestions
+        employeeValidator.setKnownEmployees([]);
+      }
+    } catch {
+      employeeValidator.setKnownEmployees([]);
+    }
+    regionValidator.setXeroRegions(allowedRegions);
     const form = await req.formData();
     const site = form.get("site_timesheet") as File | null;
     const travel = form.get("travel_timesheet") as File | null;
@@ -158,7 +190,7 @@ export async function POST(req: NextRequest) {
     // Minimal processing using the validator-with-confirmations
     const regions = siteWb.workbook.SheetNames;
     for (const regionName of regions) {
-      if (!VALID_REGIONS.includes(regionName)) continue;
+      if (!allowedRegions.includes(regionName)) continue;
       const sheet = siteWb.workbook.Sheets[regionName];
       const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
       for (let i = 1; i < data.length; i++) {

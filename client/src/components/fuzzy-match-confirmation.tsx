@@ -19,12 +19,14 @@ interface FuzzyMatch {
 interface FuzzyMatchConfirmationProps {
   pendingMatches: FuzzyMatch[];
   onConfirmMatches: (confirmations: Record<string, string | null>) => void;
+  onCancel?: () => void;
   isProcessing?: boolean;
 }
 
 export function FuzzyMatchConfirmation({ 
   pendingMatches, 
   onConfirmMatches, 
+  onCancel,
   isProcessing = false 
 }: FuzzyMatchConfirmationProps) {
   const [confirmations, setConfirmations] = useState<Record<string, string | null>>({});
@@ -150,21 +152,33 @@ export function FuzzyMatchConfirmation({
           <p className="text-sm text-muted-foreground">
             {Object.keys(confirmations).length} of {pendingMatches.length} matches reviewed
           </p>
-          <Button 
-            onClick={handleConfirmAll}
-            disabled={isProcessing}
-            data-testid="confirm-all-matches"
-            className="px-6"
-          >
-            {isProcessing ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                Processing...
-              </>
-            ) : (
-              "Confirm and Continue"
+          <div className="flex gap-2">
+            {onCancel && (
+              <Button
+                variant="outline"
+                onClick={onCancel}
+                disabled={isProcessing}
+                data-testid="cancel-matching"
+              >
+                Cancel
+              </Button>
             )}
-          </Button>
+            <Button 
+              onClick={handleConfirmAll}
+              disabled={isProcessing}
+              data-testid="confirm-all-matches"
+              className="px-6"
+            >
+              {isProcessing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Processing...
+                </>
+              ) : (
+                "Confirm and Continue"
+              )}
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

@@ -282,6 +282,10 @@ export default function Home() {
             <FuzzyMatchConfirmation
               pendingMatches={pendingMatches}
               onConfirmMatches={handleConfirmMatches}
+              onCancel={() => {
+                setPendingMatches([]);
+                setUploadedFiles(null);
+              }}
               isProcessing={processWithConfirmationsMutation.isPending}
             />
           </div>
