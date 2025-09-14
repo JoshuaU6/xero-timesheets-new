@@ -20,6 +20,15 @@ export async function POST(req: NextRequest) {
     const skipDuplicateCheck =
       searchParams.get("skipDuplicateCheck") === "true";
 
+    // Require Xero connection first
+    const isAuthed = await authManager.isAuthenticated();
+    if (!isAuthed) {
+      return NextResponse.json(
+        { success: false, needs_reauth: true, message: "Connect to Xero before processing so names and regions match your org." },
+        { status: 401 }
+      );
+    }
+
     const form = await req.formData();
     const site = form.get("site_timesheet") as File | null;
     const travel = form.get("travel_timesheet") as File | null;

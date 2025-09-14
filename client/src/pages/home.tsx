@@ -21,6 +21,9 @@ export default function Home() {
   const [uploadedFiles, setUploadedFiles] = useState<FormData | null>(null);
   const { toast } = useToast();
 
+  const { data: xeroStatus } = useQuery<any>({ queryKey: ["/api/xero/status"], staleTime: 15_000 });
+  const isConnected = Boolean(xeroStatus?.connected);
+
   // Initialize theme from localStorage on first render
   useEffect(() => {
     try {
@@ -136,6 +139,13 @@ export default function Home() {
   });
 
   const handleFileUpload = (formData: FormData) => {
+    if (!isConnected) {
+      toast({
+        title: "Connect to Xero",
+        description: "Please connect to Xero before processing so names and regions match your org.",
+      });
+      return;
+    }
     processFilesMutation.mutate(formData);
   };
 
@@ -230,7 +240,7 @@ export default function Home() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           <FileUpload 
             onFileUpload={handleFileUpload}
-            isProcessing={processFilesMutation.isPending}
+            isProcessing={processFilesMutation.isPending || !isConnected}
           />
           
           {/* Upload Status */}
